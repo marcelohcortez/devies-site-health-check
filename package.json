@@ -3,27 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Site Audit Tool — web UI monorepo",
-
-  "__DECIDE_D001__": "Change workspaces paths if you split apps/web into apps/web + apps/api",
-  "__DECIDE_D002__": "If using pnpm: delete this file and use pnpm-workspace.yaml instead",
-
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
-
   "scripts": {
-    "__NOTE__": "These delegate to individual packages. Add turbo run <script> if T-002 = Turborepo.",
     "dev":   "npm run dev   --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "lint":  "npm run lint  --workspaces --if-present",
     "test":  "npm run test  --workspaces --if-present"
   },
-
-  "devDependencies": {
-    "__DECIDE_D002__": "Add turborepo here if T-002 = Turborepo: 'turbo': '^2.x'"
-  },
-
   "engines": {
     "node": ">=18.0.0"
   }
