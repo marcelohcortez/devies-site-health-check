@@ -1,0 +1,19 @@
+{
+  "name": "@audit-web/audit-core",
+  "version": "0.1.0",
+  "description": "Self-contained audit engine — rules, scraper, interpreter",
+  "type": "commonjs",
+
+  "main":    "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+
+  "scripts": {
+    "test": "node --test src/**/*.test.js"
+  },
+
+  "dependencies": {
+    "cheerio": "^1.2.0"
+  }
+}

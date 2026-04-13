@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Turbo
+.turbo/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Reports (generated PDFs)
+reports/
+apps/web/reports/
+packages/audit-core/reports/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

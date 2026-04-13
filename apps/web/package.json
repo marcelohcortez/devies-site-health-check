@@ -1,0 +1,49 @@
+{
+  "name": "@audit-web/web",
+  "version": "0.1.0",
+  "private": true,
+
+  "__DECIDE_D001__": "Replace this file's contents with the correct framework setup:",
+  "__OPTION_NEXTJS__": {
+    "type": "module",
+    "scripts": {
+      "dev":   "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint":  "next lint"
+    },
+    "dependencies": {
+      "next":      "^14.2.0",
+      "react":     "^18.3.1",
+      "react-dom": "^18.3.1",
+      "@audit-web/audit-core": "workspace:*"
+    },
+    "devDependencies": {
+      "@types/node":  "^20.0.0",
+      "@types/react": "^18.3.0",
+      "typescript":   "^5.4.0"
+    }
+  },
+  "__OPTION_VITE_EXPRESS__": {
+    "note": "Keep current audit-web/client + audit-web/api structure, just rename to apps/web",
+    "type": "module",
+    "scripts": {
+      "dev":   "vite",
+      "build": "vite build",
+      "start": "node server.js"
+    },
+    "dependencies": {
+      "react":     "^18.3.1",
+      "react-dom": "^18.3.1",
+      "express":   "^4.18.2",
+      "cors":      "^2.8.5",
+      "@audit-web/audit-core": "workspace:*"
+    },
+    "devDependencies": {
+      "@vitejs/plugin-react": "^4.3.1",
+      "vite": "^5.4.0"
+    }
+  },
+
+  "__TODO_T012__": "Pick one option above and replace this entire file with that content."
+}

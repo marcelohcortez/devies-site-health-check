@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "installCommand": "(cd packages/audit-core && npm install --ignore-scripts) && (cd api && npm install --ignore-scripts)",
+  "buildCommand":   "cd client && npm install && npm run build",
+  "outputDirectory": "client/dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/server.js" },
+    { "source": "/(.*)",       "destination": "/index.html" }
+  ]
+}

@@ -1,0 +1,235 @@
+'use strict';
+/**
+ * rule-interpreter.js
+ *
+ * Drop-in alternative to claude-interpreter.js.
+ * Applies static rules based on official guidelines (WCAG 2.1, Google Search Central,
+ * OWASP, Lighthouse, WordPress Hardening Guide) to produce scored findings.
+ *
+ * No AI calls. No token cost. Instant.
+ *
+ * INPUT:  scrapedData (from scraper.js)
+ * OUTPUT: same shape as claude-interpreter.js
+ *   { overall_score, summary, category_scores, findings[], platform, mode: 'rule' }
+ *
+ * SCORING:
+ *   Each category starts at 100.
+ *   Each failing rule deducts its `weight` from that category's score (floor: 0).
+ *   Positive rules generate findings but do not affect the score.
+ *   Overall score = weighted average of active category scores.
+ */
+
+const SEO_RULES           = require('../rules/seo');
+const SECURITY_RULES      = require('../rules/security');
+const PERFORMANCE_RULES   = require('../rules/performance');
+const ACCESSIBILITY_RULES = require('../rules/accessibility');
+const HTML_RULES          = require('../rules/html');
+const WP_RULES            = require('../rules/wordpress');
+const STRAPI_RULES        = require('../rules/strapi');
+const GEO_RULES           = require('../rules/geo');
+
+const BASE_RULES = [
+  ...SEO_RULES,
+  ...SECURITY_RULES,
+  ...PERFORMANCE_RULES,
+  ...ACCESSIBILITY_RULES,
+  ...HTML_RULES,
+  ...WP_RULES,
+  ...STRAPI_RULES,
+];
+
+// ─── CATEGORY WEIGHTS (for overall score) ────────────────────────────────────
+
+// Default weights — no GEO
+const BASE_WEIGHTS = {
+  SEO:            0.25,
+  Security:       0.25,
+  Performance:    0.20,
+  Accessibility:  0.15,
+  HTML_Structure: 0.15,
+};
+
+// Weights when --geo is enabled — AI_Readiness gets 15%, others scale down
+const BASE_WEIGHTS_GEO = {
+  SEO:            0.20,
+  Security:       0.20,
+  Performance:    0.15,
+  Accessibility:  0.15,
+  HTML_Structure: 0.15,
+  AI_Readiness:   0.15,
+};
+
+// If WordPress or WooCommerce is detected, add their category to the mix.
+// Redistribute weights proportionally to keep total = 1.0
+function buildWeights(categoryScores, useGeo) {
+  const active = { ...(useGeo ? BASE_WEIGHTS_GEO : BASE_WEIGHTS) };
+  const extra  = [];
+
+  if ('WordPress' in categoryScores)   extra.push('WordPress');
+  if ('WooCommerce' in categoryScores) extra.push('WooCommerce');
+  if ('Strapi' in categoryScores)      extra.push('Strapi');
+
+  if (extra.length === 0) return active;
+
+  // Give each extra category 10% weight, scaled down from base weights
+  const extraWeight = 0.10 * extra.length;
+  const scale       = (1 - extraWeight);
+  const scaled      = Object.fromEntries(Object.entries(active).map(([k, v]) => [k, v * scale]));
+  for (const cat of extra) scaled[cat] = 0.10;
+
+  return scaled;
+}
+
+// ─── SCORE HELPERS ────────────────────────────────────────────────────────────
+
+function computeScore(penalties) {
+  return Math.max(0, Math.min(100, Math.round(100 - penalties)));
+}
+
+function scoreGrade(score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+// ─── SUMMARY GENERATOR ────────────────────────────────────────────────────────
+
+function buildSummary(data, overall, categoryScores, findings) {
+  const url       = data.url || 'This site';
+  const criticals = findings.filter(f => f.severity === 'critical').length;
+  const warnings  = findings.filter(f => f.severity === 'warning').length;
+  const grade     = scoreGrade(overall);
+
+  const worstCats = Object.entries(categoryScores)
+    .filter(([, s]) => s < 60)
+    .sort(([, a], [, b]) => a - b)
+    .slice(0, 2)
+    .map(([k]) => k.replace('_', ' '));
+
+  let issueText = '';
+  if (criticals > 0 && warnings > 0) {
+    issueText = ` with ${criticals} critical issue${criticals > 1 ? 's' : ''} and ${warnings} warning${warnings > 1 ? 's' : ''}`;
+  } else if (criticals > 0) {
+    issueText = ` with ${criticals} critical issue${criticals > 1 ? 's' : ''}`;
+  } else if (warnings > 0) {
+    issueText = ` with ${warnings} warning${warnings > 1 ? 's' : ''}`;
+  }
+
+  const focusText = worstCats.length > 0
+    ? ` Priority areas: ${worstCats.join(' and ')}.`
+    : '';
+
+  return (
+    `Automated rule-based analysis of ${url}. ` +
+    `Overall score: ${overall}/100 (Grade ${grade})${issueText}. ` +
+    `Findings are generated from rules based on WCAG 2.1 AA, Google Search Central, OWASP, and Lighthouse guidelines.` +
+    focusText
+  );
+}
+
+// ─── MAIN INTERPRET FUNCTION ──────────────────────────────────────────────────
+
+/**
+ * Interpret scraped data using static rules.
+ *
+ * @param {object} scrapedData       - output from scraper.js
+ * @param {object} [options={}]
+ * @param {boolean} [options.geo]    - include GEO / AI_Readiness rules (default: false)
+ * @returns {object}                 - same shape as claude-interpreter.js output
+ */
+function interpret(scrapedData, options = {}) {
+  const useGeo = options.geo === true;
+  const isWP     = scrapedData.platform?.wordpress?.detected === true;
+  const isWC     = scrapedData.platform?.woocommerce?.detected === true;
+  const isStrapi = scrapedData.platform?.strapi?.detected === true;
+
+  // ── Run all rules ────────────────────────────────────────────────────────
+  const findings   = [];
+  const penalties  = {};   // { category: totalPenalty }
+
+  const activeRules = useGeo ? [...BASE_RULES, ...GEO_RULES] : BASE_RULES;
+
+  for (const rule of activeRules) {
+    let fired = false;
+    try {
+      fired = rule.check(scrapedData);
+    } catch {
+      // rule check crashed — skip silently
+      continue;
+    }
+
+    if (!fired) continue;
+
+    // Build the finding object
+    let findingText = '';
+    try {
+      findingText = rule.finding(scrapedData);
+    } catch {
+      findingText = rule.title;
+    }
+
+    findings.push({
+      category:   rule.category,
+      severity:   rule.severity,
+      title:      rule.title,
+      finding:    findingText,
+      why:        rule.why,
+      how_to_fix: rule.how_to_fix,
+      impact:     rule.impact,
+      reference:  rule.reference || '',
+    });
+
+    // Accumulate penalty for non-positive findings
+    if (rule.severity !== 'positive' && rule.weight > 0) {
+      penalties[rule.category] = (penalties[rule.category] || 0) + rule.weight;
+    }
+  }
+
+  // ── Build category scores ────────────────────────────────────────────────
+  // Active categories are strictly the known base set + detected platforms.
+  // We do NOT expand by Object.keys(penalties) — that could pull unexpected
+  // categories (e.g. a mis-categorised rule) into buildWeights and silently
+  // alter the weighted average.
+  const activeCategories = ['SEO', 'Security', 'Performance', 'Accessibility', 'HTML_Structure'];
+  if (useGeo)   activeCategories.push('AI_Readiness');
+  if (isWP)     activeCategories.push('WordPress');
+  if (isWC)     activeCategories.push('WooCommerce');
+  if (isStrapi) activeCategories.push('Strapi');
+
+  const categoryScores = {};
+  for (const cat of activeCategories) {
+    categoryScores[cat] = computeScore(penalties[cat] || 0);
+  }
+
+  // ── Overall score ────────────────────────────────────────────────────────
+  const weights = buildWeights(categoryScores, useGeo);
+  let   totalWeight = 0;
+  let   weightedSum = 0;
+
+  for (const [cat, score] of Object.entries(categoryScores)) {
+    const w = weights[cat] || 0;
+    if (w === 0) continue;
+    weightedSum += score * w;
+    totalWeight += w;
+  }
+
+  const overall = totalWeight > 0
+    ? Math.round(weightedSum / totalWeight)
+    : Math.round(Object.values(categoryScores).reduce((s, v) => s + v, 0) / Math.max(Object.keys(categoryScores).length, 1));
+
+  // ── Summary ──────────────────────────────────────────────────────────────
+  const summary = buildSummary(scrapedData, overall, categoryScores, findings);
+
+  return {
+    overall_score:   overall,
+    summary,
+    category_scores: categoryScores,
+    findings,
+    platform:        scrapedData.platform?.platform || 'unknown',
+    mode:            'rule',
+  };
+}
+
+module.exports = { interpret };
