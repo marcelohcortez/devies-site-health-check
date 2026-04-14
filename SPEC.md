@@ -23,8 +23,8 @@
 | Status         | `DONE`                             |
 | Author         | Marcelo Henriques Cortez           |
 | Product owner  | Marcelo Henriques Cortez           |
-| Last updated   | Apr-13-2026                        |
-| Version        | 0.1.0                              |
+| Last updated   | Apr-14-2026                        |
+| Version        | 0.2.0                              |
 | Related repos  | `site-auditor` (rules source)      |
 
 ---
@@ -51,14 +51,14 @@ The app is designed to be embedded as an `<iframe>` inside a WordPress site
 - **G-4** Save every submission (name, email, URL, score, platform, `audit_data.json`) to a database.
 - **G-5** Deploy to Vercel (or equivalent PaaS) from a single monorepo.
 - **G-6** Be embeddable via `<iframe>` with no CORS friction.
+- **G-7** Send the requester an email with their score result after every successful audit.
+- **G-8** Require explicit data-use consent before an audit can be submitted.
 
 ### 1.3 Non-goals (out of scope for v1)
 
 - AI-assisted interpretation (`--ai` mode).
 - File/directory audits.
-- User authentication or login.
 - Real-time progress updates (WebSocket / SSE).
-- Email delivery of reports.
 - WordPress plugin (deferred — iframe embed is sufficient for now).
 
 ---
@@ -244,7 +244,12 @@ more website URLs before starting the audit.
 - [ ] All fields are required; HTML5 validation fires before fetch
 - [ ] An inline error message is shown if the API returns an error
 - [ ] Form resets cleanly when the user clicks "New Audit" from the results screen
-- [ ] [TODO: Define any GDPR / privacy notice copy to show below the email field]
+- [ ] A checkbox labelled "I agree to my data being used to generate this audit report" is shown below the email field
+- [ ] The checkbox is unchecked by default
+- [ ] Submit button is disabled (and visually greyed-out) until the checkbox is checked
+- [ ] The API call is never made if the checkbox is unchecked (client-side guard)
+- [ ] The `consent` field (`true`) is sent in the request body alongside name, email, urls
+- [ ] The API rejects (`400`) any request where `consent !== true` (server-side guard)
 
 ---
 
@@ -359,6 +364,103 @@ including the full `audit_data.json` for later PDF generation.
 
 ---
 
+### F-008 — Email Notification
+
+**Description:** After a successful audit, send the requester an email containing
+their overall score and a fixed message body.
+
+**Email content:**
+- Subject: `Your website audit result for <hostname>`
+- Body: "Here is the result for your audit request" followed by overall score, grade letter, and a one-line summary per category score.
+- The full findings list is **not** included in the email (operator upsell opportunity).
+
+**Acceptance criteria:**
+- [ ] Email is sent immediately after the audit completes and DB row is saved (not fire-and-forget — await before responding, but API timeout takes precedence)
+- [ ] Failed email send is logged but does NOT cause the API to return 500; the audit result is always returned to the browser
+- [ ] Email uses the address submitted in the form
+- [ ] Email contains: overall score (number), grade letter, short summary string, list of `category: score` pairs
+- [ ] HTML email with plain-text fallback
+- [ ] `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM` env vars configure the SMTP transport (see §10.1)
+- [ ] If `EMAIL_HOST` is absent, email is skipped silently (allows local dev without SMTP)
+- [ ] [TODO: Confirm SMTP provider — e.g. Resend, SendGrid, Gmail SMTP, Postmark]
+
+---
+
+### F-009 — Admin Authentication (JWT)
+
+**Description:** The `/submissions` admin page and all `/api/submissions` endpoints
+are protected by JWT authentication. An operator logs in with username + password
+to obtain a token, which is stored in `localStorage` and sent as a Bearer header
+on every admin API call.
+
+**Security requirements:**
+- Passwords stored as bcrypt hashes (min cost 12) — never plaintext
+- JWT signed with HS256, expiry 8 hours
+- JWT secret min 32 chars, set via `JWT_SECRET` env var
+- Login endpoint rate-limited: max 10 attempts/IP/15 min
+- `Authorization: Bearer <token>` required on all `/api/submissions*` endpoints
+- 401 on missing/invalid/expired token; no redirect from the API
+- Tokens are not refreshed automatically (re-login required after expiry)
+- HTTPS-only in production (enforced via `HSTS` header already applied by Helmet)
+
+**Credentials management:**
+- Single operator account for v1: username set via `ADMIN_USERNAME` env var, password hash via `ADMIN_PASSWORD_HASH` (bcrypt)
+- A helper script `scripts/hash-password.js` generates the bcrypt hash for a given plaintext password
+
+**Acceptance criteria:**
+- [ ] `POST /api/auth/login` accepts `{ username, password }`, returns `{ token }` on success, `401` on failure
+- [ ] Login page at `/login` — white background, Devies-style layout, username + password fields, submit button
+- [ ] On successful login: token stored in `localStorage`, redirect to `/submissions`
+- [ ] On failed login: inline error "Invalid credentials" (no detail about which field is wrong)
+- [ ] `/submissions` route checks for valid token in `localStorage` on mount; redirects to `/login` if absent or expired
+- [ ] Token expiry (8 h) causes the next API call to fail with 401; UI catches this and redirects to `/login`
+- [ ] `scripts/hash-password.js` prints a bcrypt hash for the first CLI argument
+- [ ] Login form has no "Remember me" / persistent session option (v1)
+
+---
+
+### F-010 — Admin Submissions View (with audit data)
+
+**Description:** The `/submissions` page (operator-only, JWT-protected per F-009)
+lists all audit submissions and allows the operator to expand any row to view the
+full audit data — scores, findings, improvement list — without needing to download
+raw JSON or use the CLI.
+
+**List view columns:**
+
+| Column | Notes |
+|--------|-------|
+| Date | ISO string formatted as `YYYY-MM-DD HH:mm` |
+| Name | Submitted by user |
+| Email | Submitted by user |
+| URL | Audited URL (truncated at 60 chars) |
+| Score | Number + grade letter badge |
+| Platform | Detected platform |
+| Actions | "View details" button |
+
+**Detail view (expanded per row or separate panel):**
+
+Shows the full `data_json` content rendered as structured UI — NOT raw JSON. Sections:
+
+1. **Summary** — `interpretation.summary` string
+2. **Category scores** — same bar chart as the public ScoreReport component
+3. **Findings** — full list grouped by severity (Critical → Warning → Info → Positive), each card showing title, description, how_to_fix, impact
+4. **Raw metadata** — collapsible section with platform detection signals, HTTP details, scrape timestamp
+
+**Acceptance criteria:**
+- [ ] `/submissions` page lists all submissions newest-first, paginated (50 per page)
+- [ ] Each row has a "View details" button that expands/opens the detail view
+- [ ] Detail view renders `interpretation.findings` grouped by severity with full card content
+- [ ] Detail view renders `interpretation.category_scores` as labelled progress bars
+- [ ] Detail view renders `interpretation.summary`
+- [ ] Collapsible "Raw metadata" section shows platform signals and HTTP info
+- [ ] "Download JSON" button in the detail view triggers download of the raw `data_json` as a `.json` file (named `audit-<id>-<hostname>.json`)
+- [ ] Pagination controls (Previous / Next) — no infinite scroll
+- [ ] Search/filter bar: filter by email or URL substring (client-side, no extra API endpoint needed for v1)
+- [ ] Empty state: "No submissions yet" when table is empty
+
+---
+
 ### F-007 — WordPress Embed (deferred)
 
 > **Status: DEFERRED to v2.** No implementation tasks in Phase 1.
@@ -378,9 +480,10 @@ deployed `audit-web` URL. The plugin needs:
 **Request body:**
 ```json
 {
-  "name":  "string (required, 1–100 chars)",
-  "email": "string (required, valid email)",
-  "urls":  ["string (1–10 URLs, each valid https:// or http://)"]
+  "name":    "string (required, 1–100 chars)",
+  "email":   "string (required, valid email)",
+  "urls":    ["string (1–10 URLs, each valid https:// or http://)"],
+  "consent": true
 }
 ```
 
@@ -430,15 +533,39 @@ deployed `audit-web` URL. The plugin needs:
 
 **Constraints:**
 - Max 10 URLs per request
+- `consent: true` required — returns 400 if absent or false
 - [TODO: Define max response time SLA — e.g. 30 s per URL before timeout]
-- [TODO: Define rate limiting policy once D-007 is resolved]
+- Rate limit: 5 requests/IP/hour (override via `RATE_LIMIT_MAX_AUDIT`)
+
+---
+
+### `POST /api/auth/login`
+
+**Request body:**
+```json
+{ "username": "string", "password": "string" }
+```
+
+**Success response — 200:**
+```json
+{ "token": "<jwt>" }
+```
+
+**Error response — 401:**
+```json
+{ "error": "Invalid credentials" }
+```
+
+**Constraints:**
+- Rate limited: 10 requests/IP/15 min
+- Token: HS256, expiry 8 h, signed with `JWT_SECRET`
 
 ---
 
 ### `GET /api/submissions`
 
-Internal endpoint — not exposed publicly. Returns the submission list without
-`data_json` (too large for a list response).
+Internal endpoint — requires `Authorization: Bearer <token>` (JWT from `/api/auth/login`).
+Returns the submission list without `data_json` (too large for a list response).
 
 **Response — 200:**
 ```json
@@ -461,6 +588,7 @@ Internal endpoint — not exposed publicly. Returns the submission list without
 
 ### `GET /api/submissions/:id/data`
 
+Requires `Authorization: Bearer <token>`.
 Returns the raw `audit_data.json` for a single submission. Use this to
 feed the data into `report_generator.py` or an AI for PDF generation.
 
@@ -577,14 +705,16 @@ const result       = interpret(scrapedData);
 
 ### 8.1 Screens
 
-| ID    | Name           | Route   | Description                          |
-|-------|----------------|---------|--------------------------------------|
-| S-001 | Audit Form     | `/`     | Initial state — name/email/URLs form |
-| S-002 | Loading        | `/`     | Shown while API request is in flight |
-| S-003 | Score Report   | `/`     | Shown on successful audit result     |
+| ID    | Name                | Route          | Description                                                        |
+|-------|---------------------|----------------|--------------------------------------------------------------------|
+| S-001 | Audit Form          | `/`            | Initial state — name/email/URLs form + consent checkbox            |
+| S-002 | Loading             | `/`            | Shown while API request is in flight                               |
+| S-003 | Score Report        | `/`            | Shown on successful audit result                                   |
+| S-004 | Admin Login         | `/login`       | Username + password form; issues JWT on success                    |
+| S-005 | Admin Submissions   | `/submissions` | JWT-protected list of all submissions with expandable detail view  |
 
-> The app is a single-page app — all states live on the same route, controlled
-> by component state.
+> S-001 through S-003 are a single-page app — all states live on `/`, controlled
+> by component state. S-004 and S-005 are separate routes.
 
 ### 8.2 Component tree
 
@@ -606,25 +736,34 @@ const result       = interpret(scrapedData);
 
 ### 8.3 Design tokens
 
-> [TODO: Define the final colour palette. Current draft uses a dark theme.
-> Fill in these values or replace with Tailwind config.]
+> **Style direction:** Light theme inspired by devies.se — white background,
+> black/near-black body text, clean sans-serif typography, minimal decoration.
+> Dark mode is out of scope for v1.
 
-| Token           | Current value | Notes                    |
-|-----------------|---------------|--------------------------|
-| `--bg`          | `#0f1117`     | Page background          |
-| `--bg2`         | `#1a1d27`     | Card background          |
-| `--bg3`         | `#22263a`     | Input background         |
-| `--border`      | `#2e3450`     | Border colour            |
-| `--text`        | `#e8eaf6`     | Primary text             |
-| `--muted`       | `#8b90a8`     | Secondary text           |
-| `--accent`      | `#5c6bc0`     | Buttons, active states   |
-| Grade A         | `#4caf50`     |                          |
-| Grade B         | `#8bc34a`     |                          |
-| Grade C         | `#ffc107`     |                          |
-| Grade D         | `#ff9800`     |                          |
-| Grade F         | `#f44336`     |                          |
+| Token           | Value     | Notes                                        |
+|-----------------|-----------|----------------------------------------------|
+| `--bg`          | `#ffffff`  | Page background                             |
+| `--bg2`         | `#f5f5f5`  | Card / section background                   |
+| `--bg3`         | `#eeeeee`  | Input background                            |
+| `--border`      | `#e0e0e0`  | Border colour                               |
+| `--text`        | `#111111`  | Primary text                                |
+| `--muted`       | `#666666`  | Secondary / helper text                     |
+| `--accent`      | `#111111`  | Buttons, active states (black on white)     |
+| `--accent-hover`| `#333333`  | Button hover state                          |
+| Grade A         | `#2e7d32`  | Dark green (readable on white)              |
+| Grade B         | `#558b2f`  |                                              |
+| Grade C         | `#f9a825`  |                                              |
+| Grade D         | `#e65100`  |                                              |
+| Grade F         | `#c62828`  |                                              |
 
-> [TODO: Define light mode? Or dark-only for v1?]
+**Typography:**
+- Font family: system-ui, -apple-system, "Segoe UI", sans-serif
+- Body: 16 px / 1.5 line-height
+- Headings: bold, tight letter-spacing
+
+**Buttons:**
+- Primary: black background, white text, no border-radius (square corners, devies.se style)
+- Secondary: white background, black border, black text
 
 ### 8.4 iframe compatibility requirements
 
@@ -645,11 +784,14 @@ const result       = interpret(scrapedData);
 
 ### 9.2 Security
 
-- [ ] API input validated and sanitised before use
+- [x] API input validated and sanitised before use (T-046d)
 - [ ] No raw user input reflected into HTML without escaping
-- [ ] Database queries use parameterised statements (no string interpolation)
-- [ ] [TODO: CORS policy — which origins should the API accept?]
-- [ ] [TODO: CSP headers on the web app]
+- [x] Database queries use parameterised statements (no string interpolation)
+- [x] Rate limiting: 5 audit requests/IP/hour via `express-rate-limit` (T-046)
+- [x] Helmet security headers on all API responses (T-046b)
+- [x] SSRF prevention: private/loopback IPs blocked before scraping (T-046c)
+- [ ] CORS policy: public for `/api/audit` (embeddable); `/api/submissions` restricted via API key (T-046e)
+- [ ] CSP headers on the web app (SPA — separate from API)
 
 ### 9.3 Accessibility
 
@@ -665,14 +807,23 @@ const result       = interpret(scrapedData);
 
 ### 10.1 Environment variables
 
-| Variable              | Required | Notes                                         |
-|-----------------------|----------|-----------------------------------------------|
-| `PORT`                | No       | API server port (default 3500, local only)      |
-| `DATABASE_URL`        | Yes      | Connection string for Turso (libSQL)            |
-| `DATABASE_AUTH_TOKEN` | Yes      | Auth token for Turso                            |
-| [FILL: any others]    |          |                                                 |
+| Variable                | Required | Notes                                                                       |
+|-------------------------|----------|-----------------------------------------------------------------------------|
+| `PORT`                  | No       | API server port (default 3500, local only)                                  |
+| `DATABASE_URL`          | Yes      | Connection string for Turso (libSQL)                                        |
+| `DATABASE_AUTH_TOKEN`   | Yes      | Auth token for Turso                                                        |
+| `RATE_LIMIT_MAX_AUDIT`  | No       | Max audit requests/IP/hour for `POST /api/audit` (default 5)               |
+| `JWT_SECRET`            | Yes      | Secret for signing admin JWTs — min 32 chars, random string                 |
+| `ADMIN_USERNAME`        | Yes      | Admin login username                                                        |
+| `ADMIN_PASSWORD_HASH`   | Yes      | bcrypt hash (cost 12) of the admin password — generate via `scripts/hash-password.js` |
+| `EMAIL_HOST`            | No       | SMTP host — if absent, email sending is skipped silently                    |
+| `EMAIL_PORT`            | No       | SMTP port (default 587)                                                     |
+| `EMAIL_USER`            | No       | SMTP username                                                               |
+| `EMAIL_PASS`            | No       | SMTP password                                                               |
+| `EMAIL_FROM`            | No       | From address, e.g. `"Devies Audit <audit@devies.se>"`                       |
 
 > No PDF-related env vars needed — PDF generation is done offline by the operator.
+> `SUBMISSIONS_API_KEY` is removed — access is now controlled by JWT (F-009).
 
 ### 10.2 Vercel configuration
 
@@ -703,12 +854,12 @@ const result       = interpret(scrapedData);
 | # | Question | Status | Answer |
 |---|----------|--------|--------|
 | Q-1 | What is the expected max response time for an audit? | OPEN | [TODO] |
-| Q-2 | Will the submissions endpoint ever be public-facing? | OPEN | [TODO] |
-| Q-3 | Is a light-mode theme needed for v1? | OPEN | [TODO] |
-| Q-4 | Should the user receive a copy of the report by email? | OPEN | [TODO] |
+| Q-2 | Will the submissions endpoint ever be public-facing? | RESOLVED | No — JWT-protected operator-only endpoint (see F-009) |
+| Q-3 | Is a light-mode theme needed for v1? | RESOLVED | Yes — white background, black text, devies.se style (see §8.3) |
+| Q-4 | Should the user receive a copy of the report by email? | RESOLVED | Yes — score + summary email sent after every audit (see F-008) |
 | Q-5 | Are Strapi rules needed in v1, or can they be deferred? | OPEN | [TODO] |
 | Q-6 | Which domain/subdomain will the tool be deployed to? | OPEN | [FILL] |
-| Q-7 | Who has access to `GET /api/submissions`? | OPEN | [TODO] |
+| Q-7 | Who has access to `GET /api/submissions`? | RESOLVED | Operator only — requires JWT from `POST /api/auth/login` (see F-009) |
 
 ---
 

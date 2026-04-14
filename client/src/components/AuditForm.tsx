@@ -1,28 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import type { FormData } from '../types';
+
+interface AuditFormProps {
+  onSubmit: (data: FormData) => void;
+  error: string | null;
+  submitting: boolean;
+}
 
 /**
  * AuditForm
  *
  * Collects: name, email, one or multiple URLs (max 10).
  * Calls onSubmit({ name, email, urls }) when the form is submitted.
+ * `submitting` is controlled by the parent so the button resets correctly
+ * when the user clicks "New Audit" after a successful run.
  */
-export default function AuditForm({ onSubmit, error }) {
-  const [name,       setName]       = useState('');
-  const [email,      setEmail]      = useState('');
-  const [mode,       setMode]       = useState('single');   // 'single' | 'multiple'
-  const [singleUrl,  setSingleUrl]  = useState('');
-  const [multiText,  setMultiText]  = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  // ── Reset submitting when an error comes back from App ──────────────────
-  useEffect(() => { if (error) setSubmitting(false); }, [error]);
+export default function AuditForm({ onSubmit, error, submitting }: AuditFormProps) {
+  const [name,      setName]      = useState('');
+  const [email,     setEmail]     = useState('');
+  const [mode,      setMode]      = useState<'single' | 'multiple'>('single');
+  const [singleUrl, setSingleUrl] = useState('');
+  const [multiText, setMultiText] = useState('');
+  const [consent,   setConsent]   = useState(false);
 
   // ── Derive URL count from textarea ───────────────────────────────────────
   const parsedUrls = multiText.split('\n').map(u => u.trim()).filter(Boolean);
   const urlCount   = Math.min(parsedUrls.length, 10);
 
   // ── Submit ───────────────────────────────────────────────────────────────
-  function handleSubmit(e) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     const urlList =
@@ -30,8 +36,8 @@ export default function AuditForm({ onSubmit, error }) {
         ? [singleUrl.trim()]
         : parsedUrls.slice(0, 10);
 
-    setSubmitting(true);
-    onSubmit({ name: name.trim(), email: email.trim(), urls: urlList });
+    if (!consent) return;
+    onSubmit({ name: name.trim(), email: email.trim(), urls: urlList, consent: true });
   }
 
   return (
@@ -130,13 +136,23 @@ export default function AuditForm({ onSubmit, error }) {
                 onChange={e => setMultiText(e.target.value)}
                 rows={5}
                 required
-                aria-label="One URL per line, up to 10"
               />
               <span className="label-hint" style={{ fontSize: 12 }}>
                 One URL per line — up to 10. Extra lines are ignored.
               </span>
             </div>
           )}
+
+          {/* Consent */}
+          <label className="consent-row">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={e => setConsent(e.target.checked)}
+              required
+            />
+            I agree to my data being used to generate this audit report.
+          </label>
 
           {/* Error */}
           {error && <div className="error-box" role="alert">{error}</div>}
@@ -145,7 +161,7 @@ export default function AuditForm({ onSubmit, error }) {
           <button
             type="submit"
             className="submit-btn"
-            disabled={submitting}
+            disabled={submitting || !consent}
           >
             {submitting ? 'Running…' : 'Run Audit'}
           </button>

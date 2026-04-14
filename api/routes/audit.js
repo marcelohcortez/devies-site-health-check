@@ -27,6 +27,40 @@ const { scrape, interpret: ruleInterpret } = require('@audit-web/audit-core');
 // ── DB ────────────────────────────────────────────────────────────────────────
 
 const { saveSubmission, listSubmissions, getSubmissionData } = require('../db');
+const { sendAuditResult } = require('../services/email');
+const { verifyJwt }       = require('../middleware/auth');
+
+// ── Security helpers ──────────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Returns true if the URL hostname resolves to a private/loopback address.
+ * Blocks SSRF: prevents the scraper from hitting internal infrastructure.
+ */
+function isPrivateUrl(urlString) {
+  let hostname;
+  try {
+    ({ hostname } = new URL(urlString));
+  } catch {
+    return true; // malformed URL — block it
+  }
+  // Strip IPv6 brackets: [::1] → ::1
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host === '::1') return true;
+  const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (ipv4) {
+    const [a, b] = [+ipv4[1], +ipv4[2]];
+    if (a === 127)                          return true; // loopback
+    if (a === 0)                            return true; // 0.0.0.0
+    if (a === 10)                           return true; // RFC 1918
+    if (a === 172 && b >= 16 && b <= 31)   return true; // RFC 1918
+    if (a === 192 && b === 168)             return true; // RFC 1918
+    if (a === 169 && b === 254)             return true; // link-local
+    if (a === 100 && b >= 64 && b <= 127)  return true; // CGNAT
+  }
+  return false;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,11 +93,20 @@ async function runAudit(url) {
  * POST /api/audit
  */
 router.post('/audit', async (req, res) => {
-  const { name, email, urls } = req.body;
+  const { name, email, urls, consent } = req.body;
 
-  if (!name?.trim() || !email?.trim()) {
-    return res.status(400).json({ error: 'Name and email are required.' });
-  }
+  // ── Input validation ─────────────────────────────────────────────────────────
+  const trimName  = typeof name  === 'string' ? name.trim()  : '';
+  const trimEmail = typeof email === 'string' ? email.trim() : '';
+
+  if (consent !== true) return res.status(400).json({ error: 'You must accept the data usage consent to request an audit.' });
+
+  if (!trimName)  return res.status(400).json({ error: 'Name is required.' });
+  if (!trimEmail) return res.status(400).json({ error: 'Email is required.' });
+  if (trimName.length  > 200)  return res.status(400).json({ error: 'Name too long (max 200 chars).' });
+  if (trimEmail.length > 254)  return res.status(400).json({ error: 'Email too long (max 254 chars).' });
+  if (!EMAIL_RE.test(trimEmail)) return res.status(400).json({ error: 'Invalid email address.' });
+
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'At least one URL is required.' });
   }
@@ -72,11 +115,19 @@ router.post('/audit', async (req, res) => {
   }
 
   const cleanUrls = urls
-    .map(u => u.trim())
+    .map(u => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean)
+    .filter(u => u.length <= 2048)
     .map(u => /^https?:\/\//i.test(u) ? u : `https://${u}`);
+
   if (cleanUrls.length === 0) {
     return res.status(400).json({ error: 'No valid URLs provided.' });
+  }
+
+  // ── SSRF prevention — block private/loopback addresses ───────────────────────
+  const blockedUrl = cleanUrls.find(isPrivateUrl);
+  if (blockedUrl) {
+    return res.status(400).json({ error: 'URL points to a private or reserved address.' });
   }
 
   try {
@@ -86,8 +137,8 @@ router.post('/audit', async (req, res) => {
 
     for (const { auditData, interpretation, url } of auditResults) {
       await saveSubmission({
-        name:     name.trim(),
-        email:    email.trim(),
+        name:     trimName,
+        email:    trimEmail,
         url,
         score:    interpretation.overall_score,
         platform: interpretation.platform,
@@ -104,6 +155,17 @@ router.post('/audit', async (req, res) => {
       });
     }
 
+    // ── Send result email — fail-silent so audit result always returns ────────
+    for (const { interpretation, url } of auditResults) {
+      sendAuditResult({
+        to:             trimEmail,
+        url,
+        score:          interpretation.overall_score,
+        categoryScores: interpretation.category_scores,
+        summary:        interpretation.summary,
+      }).catch(err => console.error('[email] Failed to send audit result:', err.message));
+    }
+
     return res.json({ success: true, results: responseResults });
 
   } catch (err) {
@@ -115,7 +177,7 @@ router.post('/audit', async (req, res) => {
 /**
  * GET /api/submissions — list (no data_json)
  */
-router.get('/submissions', async (_req, res) => {
+router.get('/submissions', verifyJwt, async (_req, res) => {
   try {
     return res.json({ submissions: await listSubmissions() });
   } catch (err) {
@@ -126,7 +188,7 @@ router.get('/submissions', async (_req, res) => {
 /**
  * GET /api/submissions/:id/data — full audit_data.json for one row
  */
-router.get('/submissions/:id/data', async (req, res) => {
+router.get('/submissions/:id/data', verifyJwt, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id.' });
 

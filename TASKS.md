@@ -180,14 +180,16 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Do NOT return 500 unless ALL URLs fail
   - Per F-003 acceptance criteria
 
-- [ ] **T-044** Implement `GET /api/submissions` endpoint
+- [ ] **T-044** Implement `GET /api/submissions` endpoint — **Priority: HIGH**
   - Returns all rows newest-first, **excluding** `data_json` column (too large for list)
-  - [FILL: Add auth/API key check per Q-7 once decided]
+  - Protected by `verifyJwt` middleware (T-049)
+  - Depends on: T-049
 
-- [ ] **T-044b** Implement `GET /api/submissions/:id/data` endpoint
+- [ ] **T-044b** Implement `GET /api/submissions/:id/data` endpoint — **Priority: HIGH**
   - Returns the raw `audit_data.json` for one submission (parses the `data_json` TEXT column)
   - 404 if submission not found
-  - This is the endpoint the operator uses to feed data into `report_generator.py` or AI
+  - Protected by `verifyJwt` middleware (T-049)
+  - Depends on: T-049
 
 - [ ] **T-045** [TEST] API route tests
   - 400 on missing name/email
@@ -199,9 +201,72 @@ These are not implementation tasks. They require you to update SPEC.md.
   - `GET /api/submissions/:id/data` returns valid JSON that parses without error
   - `GET /api/submissions` response does NOT include `data_json` field
 
-- [ ] **T-046** Add rate limiting middleware
-  - Depends on: T-006 (rate limiting decision)
-  - [FILL: Set limits from Q-7 resolution]
+- [x] **T-046** Rate limiting on `POST /api/audit`
+  - `express-rate-limit` applied in `api/server.js` before routes
+  - `/api/audit`: 5 requests/IP/hour (override via `RATE_LIMIT_MAX_AUDIT` env var)
+  - `/api/submissions`: 100 requests/IP/15 min
+  - Returns 429 with `{ error: '...' }` (standardHeaders: true)
+
+- [x] **T-046b** Helmet security headers
+  - `helmet` applied in `api/server.js`
+  - Sets: X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS, X-DNS-Prefetch-Control
+  - CSP disabled at middleware level (API-only server; the SPA's own CSP should be set separately)
+
+- [x] **T-046c** SSRF prevention in `POST /api/audit`
+  - `isPrivateUrl()` helper in `api/routes/audit.js` — checks hostname via `new URL()`
+  - Blocks: localhost, 127.x, 10.x, 172.16–31.x, 192.168.x, 0.0.0.0, ::1, link-local 169.254.x, CGNAT 100.64–127.x
+  - Malformed URLs (URL constructor throws) also blocked
+  - Returns 400 before `scrape()` is called
+
+- [x] **T-046d** Input hardening in `POST /api/audit`
+  - Email validated with regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` (returns 400 on mismatch)
+  - Name max 200 chars, email max 254 chars
+  - Each URL max 2048 chars (oversized entries silently dropped from the list)
+
+- [-] ~~**T-046e** API key guard~~ — **superseded by T-049 (JWT auth)**
+
+- [ ] **T-047** Email notification after audit (F-008) — **Priority: HIGH**
+  - Install `nodemailer` in `api/package.json`
+  - Create `api/services/email.js` — SMTP transport configured from env vars
+  - `sendAuditResult(to, url, score, grade, categorySores, summary)` function
+  - HTML email template: "Here is the result for your audit request", score circle (text-based), category table
+  - Plain-text fallback version of the same content
+  - Called in `api/routes/audit.js` after DB save — `await` it, catch errors, log but don't re-throw
+  - If `EMAIL_HOST` env var absent: skip silently (no error)
+  - Add `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM` to `.env.example`
+  - Depends on: T-042 (audit route complete)
+
+- [ ] **T-048** Data consent checkbox (F-001 update) — **Priority: HIGH**
+  - Add `consent` checkbox to `AuditForm` component (below email field)
+  - Label: "I agree to my data being used to generate this audit report"
+  - Submit button disabled unless checkbox checked (`disabled={!consent || submitting}`)
+  - Pass `consent: true` in request body to `POST /api/audit`
+  - API validation in `api/routes/audit.js`: return 400 if `consent !== true`
+  - Depends on: T-050 (AuditForm component)
+
+- [ ] **T-049** Admin JWT authentication (F-009) — **Priority: HIGH**
+  - Install `jsonwebtoken`, `bcrypt` in `api/package.json`
+  - `scripts/hash-password.js`: reads `process.argv[2]`, prints bcrypt hash (cost 12)
+  - `api/middleware/auth.js`: verifyJwt middleware — checks `Authorization: Bearer`, returns 401 on failure
+  - `POST /api/auth/login` route in `api/routes/auth.js`:
+    - Compare `username` vs `ADMIN_USERNAME` env var
+    - Compare `password` vs `ADMIN_PASSWORD_HASH` using `bcrypt.compare`
+    - Sign and return JWT (`{ sub: username }`, expiry 8 h, secret `JWT_SECRET`)
+    - Return 401 (same message for wrong user and wrong password — no enumeration)
+  - Apply `verifyJwt` middleware to all `/api/submissions*` routes (remove old API key check)
+  - Rate limit login endpoint: 10 requests/IP/15 min (separate limiter)
+  - Add `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH` to `.env.example`
+
+- [ ] **T-049b** Admin login frontend page (F-009) — **Priority: HIGH**
+  - New page/route `/login` with `LoginForm` component
+  - Fields: Username, Password; Submit button
+  - On success: store token in `localStorage` as `auditAdminToken`, redirect to `/submissions`
+  - On failure: inline error "Invalid credentials"
+  - White background, black text, Devies-style layout (per §8.3)
+  - `/submissions` route: on mount, read token from `localStorage`, verify not expired (check `exp` claim client-side), redirect to `/login` if absent or expired
+  - Catch 401 on any admin API call and redirect to `/login`
+  - Logout button on `/submissions` page: clear `localStorage`, redirect to `/login`
+  - Depends on: T-049
 
 ---
 
@@ -230,10 +295,30 @@ These are not implementation tasks. They require you to update SPEC.md.
   - States: `form` → `loading` → `results` (and back)
   - Connect to `/api/audit` via `fetch`
 
-- [ ] **T-053** Apply final styling per D-006
-  - If Tailwind: install, configure `tailwind.config.ts`, migrate from `index.css`
-  - If plain CSS: review and finalise `index.css` tokens from SPEC §8.3
-  - [FILL: Fill in design token values in SPEC §8.3 before starting]
+- [ ] **T-049c** Admin submissions UI with full audit data view (F-010) — **Priority: HIGH**
+  - New `SubmissionsPage` component at `/submissions`
+  - Table: Date, Name, Email, URL (truncated), Score + grade badge, Platform, "View details" button
+  - Paginated: 50 rows per page, Previous/Next buttons
+  - Client-side filter bar: filter by email or URL substring (filter applied to current page data)
+  - "View details" opens `SubmissionDetail` panel/modal for that row:
+    - Calls `GET /api/submissions/:id/data` with Bearer token
+    - Renders `interpretation.summary` string
+    - Renders `CategoryBars` (reuse from `ScoreReport`) for `interpretation.category_scores`
+    - Renders `FindingsPanel` (reuse from `ScoreReport`) for `interpretation.findings` grouped by severity
+    - Collapsible "Raw metadata" section: platform signals, HTTP data, scrape timestamp
+    - "Download JSON" button: `URL.createObjectURL(new Blob([json]))`, filename `audit-<id>-<hostname>.json`
+  - "Logout" button in header: clears `localStorage`, redirects to `/login`
+  - Empty state: "No submissions yet"
+  - Depends on: T-044, T-044b, T-049b
+
+- [ ] **T-053** Apply light theme per §8.3 — **Priority: HIGH**
+  - Update `index.css` with new design tokens (white bg, black text, square buttons)
+  - Remove all dark-theme token values
+  - Typography: system-ui font stack, 16 px body
+  - Primary button: black bg, white text, no border-radius
+  - Secondary button: white bg, black border
+  - Apply consistently to: AuditForm, ScoreReport, LoginForm, SubmissionsPage
+  - Visual reference: devies.se (white background, clean black type, minimal decoration)
 
 - [ ] **T-054** Verify iframe compatibility
   - Test at 320 px, 480 px, 768 px widths
@@ -315,7 +400,7 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ## Backlog / Nice-to-have (v2)
 
-- [ ] **T-090** Email submission confirmation to user (with score summary)
+- [-] ~~**T-090** Email submission confirmation~~ — **promoted to T-047 (v1)**
 - [ ] **T-091** CSV export of `submissions` table
 - [ ] **T-092** Re-run audit for an existing URL (compare with last result)
 - [ ] **T-093** Light mode theme
@@ -325,4 +410,4 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
-*Last updated: [FILL: date]. Update this file as tasks are completed or reprioritised.*
+*Last updated: 2026-04-14. Update this file as tasks are completed or reprioritised.*

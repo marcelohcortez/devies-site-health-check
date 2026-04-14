@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import type { AuditResults, Finding, SiteResult } from '../types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function gradeOf(score) {
+type Grade = { letter: string; cls: string };
+
+function gradeOf(score: number): Grade {
   if (score >= 90) return { letter: 'A', cls: 'grade-a' };
   if (score >= 80) return { letter: 'B', cls: 'grade-b' };
   if (score >= 70) return { letter: 'C', cls: 'grade-c' };
@@ -10,12 +13,12 @@ function gradeOf(score) {
   return              { letter: 'F', cls: 'grade-f' };
 }
 
-function hostname(url) {
+function hostname(url: string): string {
   try { return new URL(url).hostname; }
   catch { return url; }
 }
 
-function categoryLabel(key) {
+function categoryLabel(key: string): string {
   return key
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
@@ -23,7 +26,7 @@ function categoryLabel(key) {
 
 // ── Score circle (SVG donut) ──────────────────────────────────────────────────
 
-function ScoreCircle({ score }) {
+function ScoreCircle({ score }: { score: number }) {
   const { letter, cls } = gradeOf(score);
   const R    = 54;
   const circ = 2 * Math.PI * R;
@@ -56,7 +59,7 @@ function ScoreCircle({ score }) {
 
 // ── Category bar ─────────────────────────────────────────────────────────────
 
-function CategoryBar({ name, score }) {
+function CategoryBar({ name, score }: { name: string; score: number }) {
   const { letter, cls } = gradeOf(score);
   return (
     <div className="cat-bar">
@@ -72,13 +75,12 @@ function CategoryBar({ name, score }) {
 }
 
 // ── Findings panel — hidden pending paywall (T-056) ──────────────────────────
-// eslint-disable-next-line no-unused-vars
 
-const SEV_ORDER  = ['critical', 'warning', 'info', 'positive'];
-const SEV_LABELS = { critical: 'Critical', warning: 'Warning', info: 'Info', positive: 'Positive' };
+const SEV_ORDER  = ['critical', 'warning', 'info', 'positive'] as const;
+const SEV_LABELS: Record<string, string> = { critical: 'Critical', warning: 'Warning', info: 'Info', positive: 'Positive' };
 
-function FindingsPanel({ findings }) {
-  const grouped = SEV_ORDER.reduce((acc, sev) => {
+function FindingsPanel({ findings }: { findings: Finding[] }) {
+  const grouped = SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
     const items = findings.filter(f => f.severity === sev);
     if (items.length) acc[sev] = items;
     return acc;
@@ -101,7 +103,7 @@ function FindingsPanel({ findings }) {
             <div key={i} className="finding-card">
               <div className="finding-title">{f.title}</div>
               {(f.finding || f.description) && (
-                <div className="finding-desc">{f.finding || f.description}</div>
+                <div className="finding-desc">{f.finding ?? f.description}</div>
               )}
               {f.how_to_fix && (
                 <div className="finding-fix">
@@ -118,7 +120,7 @@ function FindingsPanel({ findings }) {
 
 // ── Single site result ────────────────────────────────────────────────────────
 
-function SiteResult({ result }) {
+function SiteResult({ result }: { result: SiteResult }) {
   const criticalCount = result.findings.filter(f => f.severity === 'critical').length;
   const warningCount  = result.findings.filter(f => f.severity === 'warning').length;
 
@@ -167,9 +169,17 @@ function SiteResult({ result }) {
   );
 }
 
+// Ensure FindingsPanel is available for future paywall integration (T-056)
+void FindingsPanel;
+
 // ── Root component ────────────────────────────────────────────────────────────
 
-export default function ScoreReport({ results, onReset }) {
+interface ScoreReportProps {
+  results: AuditResults;
+  onReset: () => void;
+}
+
+export default function ScoreReport({ results, onReset }: ScoreReportProps) {
   const { results: siteResults, name } = results;
   const [selected, setSelected] = useState(0);
 
