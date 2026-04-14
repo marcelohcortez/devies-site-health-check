@@ -17,14 +17,20 @@ const express = require('express');
 const bcrypt  = require('bcrypt');
 const jwt     = require('jsonwebtoken');
 
+const { sanitizeCredential } = require('../lib/sanitize');
+
 const router = express.Router();
 
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body || {};
+  const raw = req.body || {};
 
-  if (typeof username !== 'string' || typeof password !== 'string') {
+  if (typeof raw.username !== 'string' || typeof raw.password !== 'string') {
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
+
+  // Sanitize: strip null bytes only — preserve all other chars (passwords may contain them intentionally).
+  const username = sanitizeCredential(raw.username.trim());
+  const password = sanitizeCredential(raw.password);
 
   const expectedUsername = process.env.ADMIN_USERNAME;
   const passwordHash     = process.env.ADMIN_PASSWORD_HASH;

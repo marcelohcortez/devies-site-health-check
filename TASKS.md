@@ -225,6 +225,15 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 - [-] ~~**T-046e** API key guard~~ — **superseded by T-049 (JWT auth)**
 
+- [x] **T-046f** Input sanitization for all user-supplied strings
+  - `api/lib/sanitize.js` — three helpers: `sanitizeText`, `sanitizeCredential`, `escapeHtml`
+  - `sanitizeText(str, maxLen)`: trim + strip C0/C1 control chars + strip HTML tags + truncate
+  - `sanitizeCredential(str)`: strip null bytes only (preserves intended special chars in passwords)
+  - `escapeHtml(str)`: escapes `& < > " '` — applied wherever user strings are interpolated into HTML
+  - Applied in `api/routes/audit.js`: `name`, `email`, each URL sanitized before use
+  - Applied in `api/routes/auth.js`: `username` and `password` sanitized before comparison
+  - Applied in `api/services/email.js`: `url` and `summary` HTML-escaped in `buildHtml`
+
 - [x] **T-047** Email notification after audit (F-008) — **Priority: HIGH**
   - Install `nodemailer` in `api/package.json`
   - Create `api/services/email.js` — SMTP transport configured from env vars

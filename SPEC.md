@@ -804,8 +804,8 @@ const result       = interpret(scrapedData);
 
 ### 9.2 Security
 
-- [x] API input validated and sanitised before use (T-046d)
-- [ ] No raw user input reflected into HTML without escaping
+- [x] API input validated, sanitised, and truncated before use — `api/lib/sanitize.js` (`sanitizeText`, `sanitizeCredential`, `escapeHtml`)
+- [x] No raw user input reflected into HTML without escaping — `escapeHtml()` applied to `url` and `summary` in `services/email.js`
 - [x] Database queries use parameterised statements (no string interpolation)
 - [x] Rate limiting: 5 audit requests/IP/hour via `express-rate-limit` (T-046)
 - [x] Helmet security headers on all API responses (T-046b)

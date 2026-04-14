@@ -20,6 +20,8 @@
 const express = require('express');
 const router  = express.Router();
 
+const { sanitizeText } = require('../lib/sanitize');
+
 // ── Audit engine ──────────────────────────────────────────────────────────────
 
 const { scrape, interpret: ruleInterpret } = require('@audit-web/audit-core');
@@ -95,16 +97,14 @@ async function runAudit(url) {
 router.post('/audit', async (req, res) => {
   const { name, email, urls, consent } = req.body;
 
-  // ── Input validation ─────────────────────────────────────────────────────────
-  const trimName  = typeof name  === 'string' ? name.trim()  : '';
-  const trimEmail = typeof email === 'string' ? email.trim() : '';
+  // ── Input validation + sanitization ─────────────────────────────────────────
+  const trimName  = typeof name  === 'string' ? sanitizeText(name,  200) : '';
+  const trimEmail = typeof email === 'string' ? sanitizeText(email, 254) : '';
 
   if (consent !== true) return res.status(400).json({ error: 'You must accept the data usage consent to request an audit.' });
 
   if (!trimName)  return res.status(400).json({ error: 'Name is required.' });
   if (!trimEmail) return res.status(400).json({ error: 'Email is required.' });
-  if (trimName.length  > 200)  return res.status(400).json({ error: 'Name too long (max 200 chars).' });
-  if (trimEmail.length > 254)  return res.status(400).json({ error: 'Email too long (max 254 chars).' });
   if (!EMAIL_RE.test(trimEmail)) return res.status(400).json({ error: 'Invalid email address.' });
 
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -115,9 +115,8 @@ router.post('/audit', async (req, res) => {
   }
 
   const cleanUrls = urls
-    .map(u => (typeof u === 'string' ? u.trim() : ''))
+    .map(u => (typeof u === 'string' ? sanitizeText(u, 2048) : ''))
     .filter(Boolean)
-    .filter(u => u.length <= 2048)
     .map(u => /^https?:\/\//i.test(u) ? u : `https://${u}`);
 
   if (cleanUrls.length === 0) {

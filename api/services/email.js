@@ -11,7 +11,8 @@
  *   await sendAuditResult({ to, url, score, categoryScores, summary });
  */
 
-const nodemailer = require('nodemailer');
+const nodemailer  = require('nodemailer');
+const { escapeHtml } = require('../lib/sanitize');
 
 // ── Transport — created lazily so missing env vars don't crash on startup ─────
 
@@ -49,6 +50,10 @@ function buildHtml({ url, score, grade, categoryScores, summary }) {
   const gradeColor = { A: '#2e7d32', B: '#558b2f', C: '#f9a825', D: '#e65100', F: '#c62828' };
   const color = gradeColor[grade] || '#111';
 
+  // Escape user-supplied strings before interpolating into HTML.
+  const safeUrl     = escapeHtml(url);
+  const safeSummary = escapeHtml(summary);
+
   const categoryRows = Object.entries(categoryScores)
     .map(([cat, s]) => {
       const g     = gradeOf(s);
@@ -81,10 +86,10 @@ function buildHtml({ url, score, grade, categoryScores, summary }) {
         <!-- Score -->
         <tr>
           <td style="padding:28px 32px 20px;border-bottom:1px solid #e0e0e0;text-align:center">
-            <p style="margin:0 0 4px;font-size:13px;color:#666">${url}</p>
+            <p style="margin:0 0 4px;font-size:13px;color:#666">${safeUrl}</p>
             <p style="margin:8px 0 4px;font-size:56px;font-weight:800;line-height:1;color:${color}">${score}</p>
             <p style="margin:0;font-size:20px;font-weight:700;color:${color}">Grade ${grade}</p>
-            <p style="margin:16px 0 0;font-size:14px;color:#444;max-width:460px;margin-left:auto;margin-right:auto;line-height:1.6">${summary}</p>
+            <p style="margin:16px 0 0;font-size:14px;color:#444;max-width:460px;margin-left:auto;margin-right:auto;line-height:1.6">${safeSummary}</p>
           </td>
         </tr>
 
