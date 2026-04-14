@@ -73,23 +73,32 @@ input::placeholder { color: var(--muted); }
   max-width:  600px;
 }
 
+/* ─── Devies branding header (shared across all screens) ────────────────── */
+.devies-header {
+  display:        flex;
+  flex-direction: column;
+  align-items:    flex-start;
+  gap:            6px;
+  margin-bottom:  20px;
+}
+
+.devies-logo {
+  height: 28px;
+  width:  auto;
+}
+
+.devies-label {
+  font-size:   13px;
+  font-weight: 600;
+  color:       var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 /* Header band */
 .form-header {
   padding:       36px 36px 28px;
   border-bottom: 1px solid var(--border);
-}
-
-.form-logo {
-  display:       flex;
-  align-items:   center;
-  gap:           10px;
-  margin-bottom: 14px;
-}
-
-.form-logo-icon {
-  width:  28px;
-  height: 28px;
-  color:  var(--text);
 }
 
 .form-header h1 {

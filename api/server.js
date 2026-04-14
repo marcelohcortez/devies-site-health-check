@@ -26,8 +26,11 @@ const PORT = process.env.PORT || 3500;
 
 // ── Security headers ─────────────────────────────────────────────────────────
 app.use(helmet({
-  // API server — relax CSP (no inline scripts served here)
+  // API-only server — no inline scripts served here
   contentSecurityPolicy: false,
+  // X-Frame-Options is not set on the API server; framing policy for the SPA
+  // is enforced via Content-Security-Policy: frame-ancestors in vercel.json
+  frameguard: false,
 }));
 
 // ── CORS — public for /api/audit (embeddable widget), all origins allowed ────

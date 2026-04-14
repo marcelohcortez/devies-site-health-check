@@ -130,12 +130,30 @@ router.post('/audit', async (req, res) => {
     return res.status(400).json({ error: 'URL points to a private or reserved address.' });
   }
 
-  try {
-    const auditResults = await Promise.all(cleanUrls.map(runAudit));
+  // ── Run audits in parallel — partial failure: one URL error ≠ whole request error ──
+  const settled = await Promise.allSettled(cleanUrls.map(runAudit));
 
+  // Fail entirely only when every URL failed
+  const allFailed = settled.every(r => r.status === 'rejected');
+  if (allFailed) {
+    const firstErr = settled[0].reason;
+    console.error('[Audit] All URLs failed. First error:', firstErr?.message);
+    return res.status(500).json({ error: 'All URLs failed to audit. Please check the URLs and try again.' });
+  }
+
+  try {
     const responseResults = [];
 
-    for (const { auditData, interpretation, url } of auditResults) {
+    for (const result of settled) {
+      if (result.status === 'rejected') {
+        // Include an error entry for this URL so the client knows what failed
+        console.error('[Audit] URL failed:', result.reason?.message);
+        responseResults.push({ error: result.reason?.message ?? 'Audit failed for this URL.' });
+        continue;
+      }
+
+      const { auditData, interpretation, url } = result.value;
+
       await saveSubmission({
         name:     trimName,
         email:    trimEmail,
@@ -153,10 +171,8 @@ router.post('/audit', async (req, res) => {
         findings:        interpretation.findings,
         platform:        interpretation.platform,
       });
-    }
 
-    // ── Send result email — fail-silent so audit result always returns ────────
-    for (const { interpretation, url } of auditResults) {
+      // ── Send result email — fail-silent ─────────────────────────────────
       sendAuditResult({
         to:             trimEmail,
         url,

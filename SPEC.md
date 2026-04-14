@@ -59,7 +59,7 @@ The app is designed to be embedded as an `<iframe>` inside a WordPress site
 - AI-assisted interpretation (`--ai` mode).
 - File/directory audits.
 - Real-time progress updates (WebSocket / SSE).
-- WordPress plugin (deferred — iframe embed is sufficient for now).
+- WordPress plugin — the app is embedded directly as an `<iframe>` on the WordPress site; no plugin required.
 
 ---
 
@@ -293,7 +293,8 @@ more website URLs before starting the audit.
 - [ ] Count badges (e.g. "3 critical") visible in the hero section
 - [ ] "New Audit" button resets to the form
 - [ ] Report is readable at 320 px width (iframe-safe)
-- [ ] [TODO: Define any branding / logo requirements for the report header]
+- [ ] Report header shows the Devies logo (`https://www.devies.se/wp-content/uploads/2025/11/Devies-Group-logo.svg`) followed by the text "Site Health Checker" on the line below
+- [ ] Logo is rendered as an `<img>` with a descriptive `alt` attribute; text rendered as a separate element beneath it
 
 ---
 
@@ -405,7 +406,7 @@ on every admin API call.
 
 **Credentials management:**
 - Single operator account for v1: username set via `ADMIN_USERNAME` env var, password hash via `ADMIN_PASSWORD_HASH` (bcrypt)
-- A helper script `scripts/hash-password.js` generates the bcrypt hash for a given plaintext password
+- Generate the bcrypt hash with any standard bcrypt tool (e.g. `node -e "require('bcrypt').hash('yourpassword', 12, (e,h)=>console.log(h))"`) and set `ADMIN_PASSWORD_HASH` in env
 
 **Acceptance criteria:**
 - [ ] `POST /api/auth/login` accepts `{ username, password }`, returns `{ token }` on success, `401` on failure
@@ -414,7 +415,6 @@ on every admin API call.
 - [ ] On failed login: inline error "Invalid credentials" (no detail about which field is wrong)
 - [ ] `/submissions` route checks for valid token in `localStorage` on mount; redirects to `/login` if absent or expired
 - [ ] Token expiry (8 h) causes the next API call to fail with 401; UI catches this and redirects to `/login`
-- [ ] `scripts/hash-password.js` prints a bcrypt hash for the first CLI argument
 - [ ] Login form has no "Remember me" / persistent session option (v1)
 
 ---
@@ -461,15 +461,31 @@ Shows the full `data_json` content rendered as structured UI — NOT raw JSON. S
 
 ---
 
-### F-007 — WordPress Embed (deferred)
+### F-007 — WordPress Embed
 
-> **Status: DEFERRED to v2.** No implementation tasks in Phase 1.
+The app is embedded on a WordPress page as a plain `<iframe>` — no plugin required.
+The WordPress editor (Gutenberg block or Classic editor HTML block) inserts:
 
-When implemented: a WordPress plugin will render an `<iframe>` pointing to the
-deployed `audit-web` URL. The plugin needs:
-- A settings page to configure the server URL and iframe height.
-- A shortcode `[audit_tool]`.
-- No authentication — the app is public.
+```html
+<iframe
+  src="https://<deployed-url>"
+  width="100%"
+  height="800"
+  frameborder="0"
+  allow="forms"
+  title="Site Health Checker"
+></iframe>
+```
+
+No authentication is required — the app is fully public. The WordPress site operator
+pastes the embed code; no settings page or shortcode is needed.
+
+**Acceptance criteria:**
+- [ ] App renders correctly inside a cross-origin `<iframe>` at widths 320 px – 1280 px
+- [ ] API server does **not** set `X-Frame-Options: DENY` or `SAMEORIGIN` (Helmet override required — see §9.2)
+- [ ] SPA sets `Content-Security-Policy: frame-ancestors 'self' https://devies.se https://*.devies.se` to restrict which origins can embed it
+- [ ] All interactive elements work inside the iframe (keyboard, forms, scroll)
+- [ ] No `window.top` or `window.parent` navigation calls that would break in a sandboxed context
 
 ---
 
@@ -770,7 +786,11 @@ const result       = interpret(scrapedData);
 - No horizontal overflow at any container width ≥ 320 px
 - All interactive elements accessible via keyboard
 - No `alert()` / `confirm()` / `prompt()` calls (blocked in iframes)
-- No `window.location` redirects
+- No `window.location` top-level redirects (use in-component state transitions only)
+- No `window.top` / `window.parent` access
+- No `postMessage` calls to parent unless origin is explicitly validated
+- All cookies set by the SPA must use `SameSite=None; Secure` to function in a cross-origin iframe context (modern browsers block third-party cookies otherwise)
+- App must be served over HTTPS — mixed-content iframes are blocked by all modern browsers
 
 ---
 
@@ -790,8 +810,11 @@ const result       = interpret(scrapedData);
 - [x] Rate limiting: 5 audit requests/IP/hour via `express-rate-limit` (T-046)
 - [x] Helmet security headers on all API responses (T-046b)
 - [x] SSRF prevention: private/loopback IPs blocked before scraping (T-046c)
-- [ ] CORS policy: public for `/api/audit` (embeddable); `/api/submissions` restricted via API key (T-046e)
+- [ ] CORS policy: public for `/api/audit` (embeddable); `/api/submissions` restricted to trusted origins
 - [ ] CSP headers on the web app (SPA — separate from API)
+- [ ] **iframe embed security:** API server must override Helmet's default `X-Frame-Options` to `ALLOWALL` (or remove the header) since the SPA is intentionally embedded cross-origin; framing is restricted instead via `Content-Security-Policy: frame-ancestors` on the SPA itself
+- [ ] **Clickjacking:** SPA sets `frame-ancestors 'self' https://devies.se https://*.devies.se` — prevents embedding by untrusted third parties while allowing the WordPress host
+- [ ] **Third-party cookie blocking:** SPA must not rely on cookies for any user-facing functionality in the iframe; use in-memory or `localStorage` state only (admin area is not embedded, so admin cookies/JWT are unaffected)
 
 ### 9.3 Accessibility
 
@@ -815,7 +838,7 @@ const result       = interpret(scrapedData);
 | `RATE_LIMIT_MAX_AUDIT`  | No       | Max audit requests/IP/hour for `POST /api/audit` (default 5)               |
 | `JWT_SECRET`            | Yes      | Secret for signing admin JWTs — min 32 chars, random string                 |
 | `ADMIN_USERNAME`        | Yes      | Admin login username                                                        |
-| `ADMIN_PASSWORD_HASH`   | Yes      | bcrypt hash (cost 12) of the admin password — generate via `scripts/hash-password.js` |
+| `ADMIN_PASSWORD_HASH`   | Yes      | bcrypt hash (cost 12) of the admin password — generate with any bcrypt tool |
 | `EMAIL_HOST`            | No       | SMTP host — if absent, email sending is skipped silently                    |
 | `EMAIL_PORT`            | No       | SMTP port (default 587)                                                     |
 | `EMAIL_USER`            | No       | SMTP username                                                               |

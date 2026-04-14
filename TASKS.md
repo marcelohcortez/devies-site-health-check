@@ -175,17 +175,17 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Applied in `api/routes/audit.js` during the `cleanUrls` mapping step
   - Ensures `devies.se` and `https://devies.se` produce identical results
 
-- [ ] **T-043** Implement partial-failure handling in `POST /api/audit`
+- [x] **T-043** Implement partial-failure handling in `POST /api/audit`
   - If one URL fails to scrape, include error entry in results array
   - Do NOT return 500 unless ALL URLs fail
   - Per F-003 acceptance criteria
 
-- [ ] **T-044** Implement `GET /api/submissions` endpoint — **Priority: HIGH**
+- [x] **T-044** Implement `GET /api/submissions` endpoint — **Priority: HIGH**
   - Returns all rows newest-first, **excluding** `data_json` column (too large for list)
   - Protected by `verifyJwt` middleware (T-049)
   - Depends on: T-049
 
-- [ ] **T-044b** Implement `GET /api/submissions/:id/data` endpoint — **Priority: HIGH**
+- [x] **T-044b** Implement `GET /api/submissions/:id/data` endpoint — **Priority: HIGH**
   - Returns the raw `audit_data.json` for one submission (parses the `data_json` TEXT column)
   - 404 if submission not found
   - Protected by `verifyJwt` middleware (T-049)
@@ -225,7 +225,7 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 - [-] ~~**T-046e** API key guard~~ — **superseded by T-049 (JWT auth)**
 
-- [ ] **T-047** Email notification after audit (F-008) — **Priority: HIGH**
+- [x] **T-047** Email notification after audit (F-008) — **Priority: HIGH**
   - Install `nodemailer` in `api/package.json`
   - Create `api/services/email.js` — SMTP transport configured from env vars
   - `sendAuditResult(to, url, score, grade, categorySores, summary)` function
@@ -236,7 +236,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Add `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM` to `.env.example`
   - Depends on: T-042 (audit route complete)
 
-- [ ] **T-048** Data consent checkbox (F-001 update) — **Priority: HIGH**
+- [x] **T-048** Data consent checkbox (F-001 update) — **Priority: HIGH**
   - Add `consent` checkbox to `AuditForm` component (below email field)
   - Label: "I agree to my data being used to generate this audit report"
   - Submit button disabled unless checkbox checked (`disabled={!consent || submitting}`)
@@ -244,9 +244,8 @@ These are not implementation tasks. They require you to update SPEC.md.
   - API validation in `api/routes/audit.js`: return 400 if `consent !== true`
   - Depends on: T-050 (AuditForm component)
 
-- [ ] **T-049** Admin JWT authentication (F-009) — **Priority: HIGH**
+- [x] **T-049** Admin JWT authentication (F-009) — **Priority: HIGH**
   - Install `jsonwebtoken`, `bcrypt` in `api/package.json`
-  - `scripts/hash-password.js`: reads `process.argv[2]`, prints bcrypt hash (cost 12)
   - `api/middleware/auth.js`: verifyJwt middleware — checks `Authorization: Bearer`, returns 401 on failure
   - `POST /api/auth/login` route in `api/routes/auth.js`:
     - Compare `username` vs `ADMIN_USERNAME` env var
@@ -256,8 +255,9 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Apply `verifyJwt` middleware to all `/api/submissions*` routes (remove old API key check)
   - Rate limit login endpoint: 10 requests/IP/15 min (separate limiter)
   - Add `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH` to `.env.example`
+  - To generate `ADMIN_PASSWORD_HASH`: `node -e "require('bcrypt').hash('yourpassword', 12, (e,h)=>console.log(h))"`
 
-- [ ] **T-049b** Admin login frontend page (F-009) — **Priority: HIGH**
+- [x] **T-049b** Admin login frontend page (F-009) — **Priority: HIGH**
   - New page/route `/login` with `LoginForm` component
   - Fields: Username, Password; Submit button
   - On success: store token in `localStorage` as `auditAdminToken`, redirect to `/submissions`
@@ -291,11 +291,11 @@ These are not implementation tasks. They require you to update SPEC.md.
   - When paywall is ready: add a locked section below the CTA with a prompt to unlock findings
   - On unlock: render `<FindingsPanel findings={result.findings} />`
 
-- [ ] **T-052** Migrate / adapt `App` root component (state machine)
+- [x] **T-052** Migrate / adapt `App` root component (state machine)
   - States: `form` → `loading` → `results` (and back)
   - Connect to `/api/audit` via `fetch`
 
-- [ ] **T-049c** Admin submissions UI with full audit data view (F-010) — **Priority: HIGH**
+- [x] **T-049c** Admin submissions UI with full audit data view (F-010) — **Priority: HIGH**
   - New `SubmissionsPage` component at `/submissions`
   - Table: Date, Name, Email, URL (truncated), Score + grade badge, Platform, "View details" button
   - Paginated: 50 rows per page, Previous/Next buttons
@@ -311,7 +311,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Empty state: "No submissions yet"
   - Depends on: T-044, T-044b, T-049b
 
-- [ ] **T-053** Apply light theme per §8.3 — **Priority: HIGH**
+- [x] **T-053** Apply light theme per §8.3 — **Priority: HIGH**
   - Update `index.css` with new design tokens (white bg, black text, square buttons)
   - Remove all dark-theme token values
   - Typography: system-ui font stack, 16 px body
@@ -320,10 +320,18 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Apply consistently to: AuditForm, ScoreReport, LoginForm, SubmissionsPage
   - Visual reference: devies.se (white background, clean black type, minimal decoration)
 
-- [ ] **T-054** Verify iframe compatibility
-  - Test at 320 px, 480 px, 768 px widths
-  - No horizontal scroll
+- [x] **T-054** Verify iframe compatibility and security — **Priority: HIGH**
+  - Test at 320 px, 480 px, 768 px widths — no horizontal scroll
+  - Override Helmet's `X-Frame-Options` on the API server so the SPA can be cross-origin embedded (`frameguard: false`)
+  - SPA response sets `Content-Security-Policy: frame-ancestors 'self' https://devies.se https://*.devies.se` via `vercel.json` headers
+  - Confirm no `alert()`, `confirm()`, `prompt()`, `window.top`, or `window.parent` calls in client code
+  - Confirm no cookies used for user-facing SPA state (use localStorage/memory only in iframe context)
   - All criteria in SPEC §8.4 ✓
+
+- [x] **T-054b** Add Devies logo and "Site Health Checker" label to report header — **Priority: HIGH**
+  - Render `<img src="https://www.devies.se/wp-content/uploads/2025/11/Devies-Group-logo.svg" alt="Devies Group" />` in the app header
+  - On the line below the logo render the text "Site Health Checker"
+  - Applied to all screens (AuditForm, ScoreReport, LoadingScreen) via shared `DeviesHeader` component
 
 - [ ] **T-055** [TEST] Component tests
   - `AuditForm` renders all fields
@@ -387,14 +395,12 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
-## Phase 7 — WordPress plugin (deferred)
+## Phase 7 — WordPress embed
 
-> Status: **DEFERRED** — tracked here for planning only. Start after Phase 6.
+> No plugin required. The app is embedded as a plain `<iframe>` on the WordPress page.
+> See SPEC §F-007 for the embed snippet and iframe security requirements.
 
-- [-] **T-080** Create WordPress plugin with `[audit_tool]` shortcode
-  - Embed the deployed Vercel URL as `<iframe>`
-  - Settings page: server URL, height, border radius
-  - Ref: existing scaffold in `audit-web/wp-plugin/` (written in v0, verify still correct)
+- [-] **T-080** ~~WordPress plugin~~ — **REMOVED.** Direct `<iframe>` embed replaces the plugin approach. The `wp-plugin/` directory is no longer part of this project.
 
 ---
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AuditResults, Finding, SiteResult } from '../types';
+import DeviesHeader from './DeviesHeader';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -189,6 +190,7 @@ export default function ScoreReport({ results, onReset }: ScoreReportProps) {
       {/* Top bar */}
       <div className="report-top">
         <div>
+          <DeviesHeader />
           <h2>Audit Results</h2>
           {name && (
             <p className="report-greeting">

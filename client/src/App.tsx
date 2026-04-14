@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import AuditForm from './components/AuditForm';
 import ScoreReport from './components/ScoreReport';
+import DeviesHeader from './components/DeviesHeader';
 import LoginPage from './pages/LoginPage';
 import SubmissionsPage from './pages/SubmissionsPage';
 import type { AuditResults, FormData } from './types';
@@ -49,6 +50,7 @@ function AuditApp() {
 
       {view === 'loading' && (
         <div className="loading-screen">
+          <DeviesHeader />
           <div className="spinner" />
           <p className="loading-title">Running audit…</p>
           <p className="loading-sub">

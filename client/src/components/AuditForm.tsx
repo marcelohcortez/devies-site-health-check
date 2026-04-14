@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormData } from '../types';
+import DeviesHeader from './DeviesHeader';
 
 interface AuditFormProps {
   onSubmit: (data: FormData) => void;
@@ -46,14 +47,7 @@ export default function AuditForm({ onSubmit, error, submitting }: AuditFormProp
 
         {/* ── Header ── */}
         <div className="form-header">
-          <div className="form-logo">
-            <svg className="form-logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"  stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-              <path d="M2 17l10 5 10-5"              stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-              <path d="M2 12l10 5 10-5"              stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-            </svg>
-            <span style={{ fontWeight: 700, fontSize: 18 }}>Devies - Site Health Checker</span>
-          </div>
+          <DeviesHeader />
           <p>
             Get a comprehensive analysis of your website's SEO, Security,
             Performance and Accessibility — free, instant, no login required.
