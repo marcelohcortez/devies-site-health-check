@@ -7,7 +7,7 @@ test.describe('Audit Form', () => {
   });
 
   test('shows branding', async ({ page }) => {
-    await expect(page.getByText('Devies - Site Health Checker')).toBeVisible();
+    await expect(page.getByText('Site Health Checker')).toBeVisible();
   });
 
   test('renders name, email and URL fields', async ({ page }) => {
@@ -62,6 +62,7 @@ test.describe('Audit Form', () => {
     await page.getByLabel('Your Name').fill('Jane');
     await page.getByLabel('Email Address').fill('jane@example.com');
     await page.getByLabel('Website URL').fill('https://example.com');
+    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Run Audit' }).click();
 
     await expect(page.getByText('Running audit…')).toBeVisible();
@@ -75,6 +76,7 @@ test.describe('Audit Form', () => {
     await page.getByLabel('Your Name').fill('Jane');
     await page.getByLabel('Email Address').fill('jane@example.com');
     await page.getByLabel('Website URL').fill('https://example.com');
+    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Run Audit' }).click();
 
     await expect(page.getByRole('alert')).toContainText('Server exploded');
@@ -86,6 +88,7 @@ test.describe('Audit Form', () => {
     await page.getByLabel('Your Name').fill('Jane');
     await page.getByLabel('Email Address').fill('jane@example.com');
     await page.getByLabel('Website URL').fill('https://example.com');
+    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Run Audit' }).click();
 
     await expect(page.getByRole('alert')).toBeVisible();
@@ -99,8 +102,26 @@ test.describe('Audit Form', () => {
     await page.getByLabel('Your Name').fill('Jane');
     await page.getByLabel('Email Address').fill('jane@example.com');
     await page.getByLabel('Website URL').fill('https://example.com');
+    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Run Audit' }).click();
 
+    // Button re-enables; consent is still checked so disabled=false
     await expect(page.getByRole('button', { name: 'Run Audit' })).toBeEnabled();
+  });
+
+  test('Run Audit button is disabled when consent is unchecked', async ({ page }) => {
+    // Consent starts unchecked — button must be disabled regardless of other fields
+    await expect(page.getByRole('button', { name: 'Run Audit' })).toBeDisabled();
+  });
+
+  test('Run Audit button enables after checking the consent checkbox', async ({ page }) => {
+    await page.getByRole('checkbox').check();
+    await expect(page.getByRole('button', { name: 'Run Audit' })).toBeEnabled();
+  });
+
+  test('unchecking consent disables the button again', async ({ page }) => {
+    await page.getByRole('checkbox').check();
+    await page.getByRole('checkbox').uncheck();
+    await expect(page.getByRole('button', { name: 'Run Audit' })).toBeDisabled();
   });
 });

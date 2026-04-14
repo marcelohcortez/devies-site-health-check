@@ -7,6 +7,7 @@ async function fillAndSubmit(page: Page, url = 'https://example.com') {
   await page.getByLabel('Your Name').fill('Jane Smith');
   await page.getByLabel('Email Address').fill('jane@example.com');
   await page.getByLabel('Website URL').fill(url);
+  await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Run Audit' }).click();
 }
 
@@ -141,6 +142,7 @@ test.describe('Audit flow — multiple sites', () => {
     await page.getByLabel(/Website URLs/).fill(
       'https://example.com\nhttps://another.com'
     );
+    await page.getByRole('checkbox').check();
   });
 
   test('shows site-selector tabs for each result', async ({ page }) => {
@@ -200,6 +202,7 @@ test.describe('Audit flow — grade display', () => {
       await page.getByLabel('Your Name').fill('Jane');
       await page.getByLabel('Email Address').fill('jane@example.com');
       await page.getByLabel('Website URL').fill('https://example.com');
+      await page.getByRole('checkbox').check();
       await page.getByRole('button', { name: 'Run Audit' }).click();
 
       await expect(page.locator('.score-num')).toContainText(String(score));
