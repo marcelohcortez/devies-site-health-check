@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { AuditResults, Finding, SiteResult } from '../types';
+import type { AuditResults, Finding, SiteResult, SiteResultItem } from '../types';
+import { isSiteError } from '../types';
 import DeviesHeader from './DeviesHeader';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
 
 // ── Single site result ────────────────────────────────────────────────────────
 
-function SiteResult({ result }: { result: SiteResult }) {
+function SiteResultCard({ result }: { result: SiteResult }) {
   const criticalCount = result.findings.filter(f => f.severity === 'critical').length;
   const warningCount  = result.findings.filter(f => f.severity === 'warning').length;
 
@@ -170,6 +171,21 @@ function SiteResult({ result }: { result: SiteResult }) {
   );
 }
 
+function SiteErrorCard({ result }: { result: { url: string | null; error: string } }) {
+  return (
+    <div className="site-result">
+      <div className="error-box" style={{ margin: '24px 0' }}>
+        <strong>Audit failed{result.url ? ` for ${result.url}` : ''}:</strong> {result.error}
+      </div>
+    </div>
+  );
+}
+
+function SiteResultItem({ result }: { result: SiteResultItem }) {
+  if (isSiteError(result)) return <SiteErrorCard result={result} />;
+  return <SiteResultCard result={result} />;
+}
+
 // Ensure FindingsPanel is available for future paywall integration (T-056)
 void FindingsPanel;
 
@@ -207,7 +223,9 @@ export default function ScoreReport({ results, onReset }: ScoreReportProps) {
       {siteResults.length > 1 && (
         <div className="site-tabs" role="tablist" aria-label="Select website">
           {siteResults.map((r, i) => {
-            const g = gradeOf(r.overall_score);
+            const isErr = isSiteError(r);
+            const g = isErr ? null : gradeOf(r.overall_score);
+            const label = r.url ? hostname(r.url) : 'Unknown';
             return (
               <button
                 key={i}
@@ -216,8 +234,11 @@ export default function ScoreReport({ results, onReset }: ScoreReportProps) {
                 className={`site-tab${selected === i ? ' active' : ''}`}
                 onClick={() => setSelected(i)}
               >
-                <span className={`tab-score ${g.cls}`}>{r.overall_score}</span>
-                <span>{hostname(r.url)}</span>
+                {isErr
+                  ? <span className="sev-badge sev-critical">Error</span>
+                  : <span className={`tab-score ${g!.cls}`}>{(r as SiteResult).overall_score}</span>
+                }
+                <span>{label}</span>
               </button>
             );
           })}
@@ -225,7 +246,7 @@ export default function ScoreReport({ results, onReset }: ScoreReportProps) {
       )}
 
       {/* Active site */}
-      <SiteResult result={siteResults[selected]} />
+      <SiteResultItem result={siteResults[selected]} />
     </div>
   );
 }

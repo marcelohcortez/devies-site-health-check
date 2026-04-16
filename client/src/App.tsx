@@ -5,7 +5,7 @@ import ScoreReport from './components/ScoreReport';
 import DeviesHeader from './components/DeviesHeader';
 import LoginPage from './pages/LoginPage';
 import SubmissionsPage from './pages/SubmissionsPage';
-import type { AuditResults, FormData } from './types';
+import type { AuditResults, FormData, SiteResultItem } from './types';
 
 type View = 'form' | 'loading' | 'results';
 
@@ -27,7 +27,7 @@ function AuditApp() {
         body:    JSON.stringify(formData),
       });
 
-      const data = await res.json() as { results: AuditResults['results']; error?: string };
+      const data = await res.json() as { results: SiteResultItem[]; error?: string };
 
       if (!res.ok) throw new Error(data.error ?? 'Audit failed. Please try again.');
 

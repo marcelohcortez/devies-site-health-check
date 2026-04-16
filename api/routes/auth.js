@@ -62,7 +62,24 @@ router.post('/login', async (req, res) => {
     { expiresIn: '8h', algorithm: 'HS256' }
   );
 
-  return res.json({ token });
+  const isProd = process.env.NODE_ENV !== 'development';
+
+  return res
+    .cookie('auditAdminToken', token, {
+      httpOnly: true,
+      secure:   isProd,      // HTTPS-only in production
+      sameSite: 'strict',
+      maxAge:   8 * 60 * 60 * 1000,  // 8 h in ms
+      path:     '/',
+    })
+    .json({ ok: true });
+});
+
+// POST /api/auth/logout — clear the session cookie
+router.post('/logout', (_req, res) => {
+  res
+    .clearCookie('auditAdminToken', { path: '/' })
+    .json({ ok: true });
 });
 
 module.exports = router;

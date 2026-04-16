@@ -3,20 +3,22 @@
 /**
  * middleware/auth.js
  *
- * verifyJwt — Express middleware that checks Authorization: Bearer <token>.
+ * verifyJwt — Express middleware that checks the HttpOnly `auditAdminToken` cookie.
  * Attaches decoded payload to req.admin on success.
  * Returns 401 JSON on missing / invalid / expired token.
  */
 
-const jwt = require('jsonwebtoken');
+const jwt                    = require('jsonwebtoken');
+const { parse: parseCookies } = require('cookie');
 
 function verifyJwt(req, res, next) {
-  const header = req.headers['authorization'];
-  if (!header || !header.startsWith('Bearer ')) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  const token   = cookies.auditAdminToken;
+
+  if (!token) {
     return res.status(401).json({ error: 'Authentication required.' });
   }
 
-  const token  = header.slice(7);
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {

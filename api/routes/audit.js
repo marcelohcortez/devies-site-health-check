@@ -67,7 +67,14 @@ function isPrivateUrl(urlString) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function runAudit(url) {
-  const scrapedData    = await scrape(url);
+  const scrapedData = await scrape(url);
+
+  // scrape() returns { error, ... } on fetch failure — fail closed so the
+  // interpreter never scores a dead/unreachable URL as 100.
+  if (scrapedData.error) {
+    throw new Error(scrapedData.error);
+  }
+
   const interpretation = ruleInterpret(scrapedData);
 
   // Assemble the audit_data shape — compatible with report_generator.py
@@ -130,7 +137,15 @@ router.post('/audit', async (req, res) => {
   }
 
   // ── Run audits in parallel — partial failure: one URL error ≠ whole request error ──
-  const settled = await Promise.allSettled(cleanUrls.map(runAudit));
+  // Attach the url to each rejection so the client knows which URL failed.
+  const settled = await Promise.allSettled(
+    cleanUrls.map(url =>
+      runAudit(url).catch(err => {
+        err.failedUrl = url;
+        return Promise.reject(err);
+      })
+    )
+  );
 
   // Fail entirely only when every URL failed
   const allFailed = settled.every(r => r.status === 'rejected');
@@ -145,9 +160,12 @@ router.post('/audit', async (req, res) => {
 
     for (const result of settled) {
       if (result.status === 'rejected') {
-        // Include an error entry for this URL so the client knows what failed
-        console.error('[Audit] URL failed:', result.reason?.message);
-        responseResults.push({ error: result.reason?.message ?? 'Audit failed for this URL.' });
+        const reason = result.reason;
+        console.error('[Audit] URL failed:', reason?.message);
+        responseResults.push({
+          url:   reason?.failedUrl ?? null,
+          error: reason?.message  ?? 'Audit failed for this URL.',
+        });
         continue;
       }
 

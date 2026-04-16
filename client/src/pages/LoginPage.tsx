@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const TOKEN_KEY = 'auditAdminToken';
-
 export default function LoginPage() {
   const navigate              = useNavigate();
   const [username, setUsername] = useState('');
@@ -17,19 +15,19 @@ export default function LoginPage() {
 
     try {
       const res  = await fetch('/api/auth/login', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ username, password }),
+        method:      'POST',
+        credentials: 'include',          // receive the HttpOnly cookie
+        headers:     { 'Content-Type': 'application/json' },
+        body:         JSON.stringify({ username, password }),
       });
 
-      const data = await res.json() as { token?: string; error?: string };
+      const data = await res.json() as { ok?: boolean; error?: string };
 
       if (!res.ok) {
         setError(data.error ?? 'Invalid credentials.');
         return;
       }
 
-      localStorage.setItem(TOKEN_KEY, data.token!);
       navigate('/submissions', { replace: true });
     } catch {
       setError('Network error. Please try again.');

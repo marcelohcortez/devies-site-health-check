@@ -72,11 +72,27 @@ app.use('/api/auth/login',  loginLimiter);
 // ── Body parser ───────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));
 
+// ── DB init — runs on every cold start (local dev AND Vercel serverless) ─────
+// Kick off schema creation immediately; store the promise so all concurrent
+// cold-start requests await the same single init call.
+const _dbReady = init().catch(err => {
+  console.error('[audit-web] DB init failed:', err.message);
+});
+
 // ── Static (React build — local dev only, Vercel serves this separately) ─────
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 app.use(express.static(CLIENT_DIST));
 
-// ── API ──────────────────────────────────────────────────────────────────────
+// ── API — block until DB schema is ready ─────────────────────────────────────
+app.use('/api', async (_req, res, next) => {
+  try {
+    await _dbReady;
+    next();
+  } catch {
+    res.status(503).json({ error: 'Database unavailable.' });
+  }
+});
+
 app.use('/api/auth', authRouter);
 app.use('/api',      auditRouter);
 
@@ -88,16 +104,16 @@ app.get('*', (_req, res) => {
 // ── Export for Vercel (serverless) ───────────────────────────────────────────
 module.exports = app;
 
-// ── Local dev: init DB then start listening ──────────────────────────────────
+// ── Local dev: start listening (DB init already kicked off above) ─────────────
 if (require.main === module) {
-  init()
+  _dbReady
     .then(() => {
       app.listen(PORT, () => {
         console.log(`[audit-web] Server running → http://localhost:${PORT}`);
       });
     })
     .catch(err => {
-      console.error('[audit-web] DB init failed:', err.message);
+      console.error('[audit-web] Cannot start — DB init failed:', err.message);
       process.exit(1);
     });
 }

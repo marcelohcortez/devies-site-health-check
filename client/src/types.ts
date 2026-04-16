@@ -15,8 +15,19 @@ export interface SiteResult {
   findings: Finding[];
 }
 
+export interface SiteResultError {
+  url: string | null;
+  error: string;
+}
+
+export type SiteResultItem = SiteResult | SiteResultError;
+
+export function isSiteError(r: SiteResultItem): r is SiteResultError {
+  return 'error' in r;
+}
+
 export interface AuditResults {
-  results: SiteResult[];
+  results: SiteResultItem[];
   name: string;
 }
 

@@ -36,6 +36,9 @@ async function init() {
     'CREATE INDEX IF NOT EXISTS idx_email      ON submissions(email)'
   );
   await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_email_url  ON submissions(email, url)'
+  );
+  await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_created_at ON submissions(created_at)'
   );
 }
@@ -44,10 +47,11 @@ async function init() {
 
 /**
  * Save one audit submission.
- * Deletes any existing row for the same URL first (always fresh).
+ * Replaces the existing row for the same (email, url) pair — so each submitter
+ * gets one current result per URL without touching other users' records.
  */
 async function saveSubmission({ name, email, url, score, platform, dataJson }) {
-  await db.execute({ sql: 'DELETE FROM submissions WHERE url = ?', args: [url] });
+  await db.execute({ sql: 'DELETE FROM submissions WHERE email = ? AND url = ?', args: [email, url] });
   await db.execute({
     sql:  'INSERT INTO submissions (name, email, url, score, platform, data_json) VALUES (?, ?, ?, ?, ?, ?)',
     args: [

@@ -2,8 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Finding } from '../types';
 
-const TOKEN_KEY  = 'auditAdminToken';
-const PAGE_SIZE  = 50;
+const PAGE_SIZE = 50;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,10 +56,6 @@ function hostname(url: string) {
   try { return new URL(url).hostname; } catch { return url; }
 }
 
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : { Authorization: '' };
-}
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -137,7 +132,7 @@ function DetailPanel({ submission, onClose }: { submission: Submission; onClose:
     setLoading(true);
     setError(null);
 
-    fetch(`/api/submissions/${submission.id}/data`, { headers: authHeaders() })
+    fetch(`/api/submissions/${submission.id}/data`, { credentials: 'include' })
       .then(async res => {
         if (res.status === 401) { navigate('/login', { replace: true }); return; }
         if (!res.ok) throw new Error('Failed to load audit data.');
@@ -258,27 +253,17 @@ export default function SubmissionsPage() {
   const [page,        setPage]              = useState(1);
   const [selected,    setSelected]          = useState<Submission | null>(null);
 
-  // ── Auth guard ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) { navigate('/login', { replace: true }); return; }
-
-    // Client-side expiry check — decode JWT payload without verification
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      if (payload.exp && Date.now() / 1000 > payload.exp) {
-        localStorage.removeItem(TOKEN_KEY);
-        navigate('/login', { replace: true });
-      }
-    } catch { /* malformed — let the API reject it */ }
-  }, [navigate]);
+  // ── Auth guard — the cookie is HttpOnly so we can't inspect it client-side.
+  // The API returns 401 on any protected request when the cookie is missing or
+  // expired; fetch handlers below redirect to /login on that status.
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── Load submissions ────────────────────────────────────────────────────────
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    fetch('/api/submissions', { headers: authHeaders() })
+    fetch('/api/submissions', { credentials: 'include' })
       .then(async res => {
         if (res.status === 401) { navigate('/login', { replace: true }); return; }
         if (!res.ok) throw new Error('Failed to load submissions.');
@@ -293,8 +278,8 @@ export default function SubmissionsPage() {
 
   // ── Logout ──────────────────────────────────────────────────────────────────
   function logout() {
-    localStorage.removeItem(TOKEN_KEY);
-    navigate('/login', { replace: true });
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      .finally(() => navigate('/login', { replace: true }));
   }
 
   // ── Filter + paginate ───────────────────────────────────────────────────────

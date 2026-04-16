@@ -16,9 +16,10 @@
  * into scored, plain-language findings.
  */
 
-const https   = require('https');
-const http    = require('http');
-const { URL } = require('url');
+const https              = require('https');
+const http               = require('http');
+const { URL }            = require('url');
+const { lookup: dnsLookup } = require('dns').promises;
 const cheerio = require('cheerio');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
@@ -36,43 +37,104 @@ const SENSITIVE_FILE_PATHS = [
   '/xmlrpc.php', '/.well-known/security.txt',
 ];
 
+// ─── SSRF PROTECTION ─────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the given IP address (v4 or v6) is private/reserved.
+ * Used to block SSRF after DNS resolution.
+ */
+function isPrivateIp(addr) {
+  if (!addr) return true;
+  // IPv6 loopback / link-local
+  if (addr === '::1' || addr.toLowerCase().startsWith('fe80:')) return true;
+  // IPv4-mapped IPv6: ::ffff:192.168.1.1
+  const v4mapped = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  const ip = v4mapped ? v4mapped[1] : addr;
+  const parts = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!parts) return false; // non-private IPv6 — allow
+  const [a, b] = [+parts[1], +parts[2]];
+  if (a === 127)                        return true; // loopback
+  if (a === 0)                          return true; // 0.0.0.0
+  if (a === 10)                         return true; // RFC 1918
+  if (a === 172 && b >= 16 && b <= 31)  return true; // RFC 1918
+  if (a === 192 && b === 168)           return true; // RFC 1918
+  if (a === 169 && b === 254)           return true; // link-local
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT RFC 6598
+  return false;
+}
+
 // ─── LOW-LEVEL HTTP ───────────────────────────────────────────────────────────
 
 /**
  * Fetch a URL. Returns headers + body + metadata.
  * Follows up to 5 redirects. Caps body at MAX_BODY_BYTES.
+ *
+ * SSRF protection:
+ *  - Resolves hostname via DNS before connecting.
+ *  - Pins the connection to the resolved IP (prevents DNS rebinding).
+ *  - Re-validates every redirect destination through the same checks.
  */
-function fetchUrl(url, method = 'GET', redirectCount = 0) {
-  return new Promise((resolve) => {
-    if (redirectCount > 5) {
-      resolve({ ok: false, error: 'Too many redirects', redirects: redirectCount });
-      return;
+async function fetchUrl(url, method = 'GET', redirectCount = 0) {
+  if (redirectCount > 5) {
+    return { ok: false, error: 'Too many redirects', redirects: redirectCount };
+  }
+
+  let parsed;
+  try { parsed = new URL(url); }
+  catch { return { ok: false, error: 'Invalid URL' }; }
+
+  // ── SSRF: resolve hostname → validate → pin connection to IP ─────────────
+  const rawHost = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+
+  // Fast literal checks (no DNS needed)
+  if (rawHost === 'localhost' || rawHost === '::1') {
+    return { ok: false, error: 'Blocked: private address' };
+  }
+
+  let resolvedIp;
+  const isIpLiteral = /^(\d+\.){3}\d+$/.test(rawHost) || rawHost.includes(':');
+  if (isIpLiteral) {
+    resolvedIp = rawHost;
+  } else {
+    try {
+      const resolved = await dnsLookup(parsed.hostname, { family: 4 });
+      resolvedIp = resolved.address;
+    } catch {
+      return { ok: false, error: 'DNS resolution failed' };
     }
+  }
 
-    const startTime = Date.now();
-    let parsed;
-    try { parsed = new URL(url); }
-    catch { resolve({ ok: false, error: 'Invalid URL' }); return; }
+  if (isPrivateIp(resolvedIp)) {
+    return { ok: false, error: 'Blocked: resolves to private/reserved address' };
+  }
 
-    const lib = parsed.protocol === 'https:' ? https : http;
-    const options = {
-      hostname: parsed.hostname,
-      port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-      path:     parsed.pathname + parsed.search,
-      method,
-      timeout:  FETCH_TIMEOUT_MS,
-      headers: {
-        'User-Agent':      'Mozilla/5.0 (compatible; SiteAuditor/2.0)',
-        'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'identity',
-      },
-    };
+  const startTime = Date.now();
+  const lib = parsed.protocol === 'https:' ? https : http;
+  const options = {
+    hostname: resolvedIp,               // connect to pinned IP (prevents rebinding)
+    port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+    path:     parsed.pathname + parsed.search,
+    method,
+    timeout:  FETCH_TIMEOUT_MS,
+    headers: {
+      'User-Agent':      'Mozilla/5.0 (compatible; SiteAuditor/2.0)',
+      'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'identity',
+      'Host':            parsed.host,   // correct Host header for virtual hosting
+    },
+  };
 
+  // SNI — must use the original hostname, not the IP
+  if (parsed.protocol === 'https:') {
+    options.servername = parsed.hostname;
+  }
+
+  return new Promise((resolve) => {
     const req = lib.request(options, (res) => {
       const responseTimeMs = Date.now() - startTime;
 
-      // Follow redirects
+      // Follow redirects — fetchUrl is now async so recursion re-runs all SSRF checks
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         let loc = res.headers.location;
         if (loc.startsWith('/')) loc = `${parsed.protocol}//${parsed.hostname}${loc}`;
@@ -1035,7 +1097,7 @@ async function scrape(url) {
   // ── Run all analysis layers in parallel where possible ──
   const [seoData, securityData, platformData] = await Promise.all([
     analyseSeo($, page, page.finalUrl || url),
-    analyseSecurity($, { http: analyseHttpLayer(page, url), headers: page.headers }, page.finalUrl || url),
+    analyseSecurity($, { http: analyseHttpLayer(page, url), headers: page.headers, body: page.body }, page.finalUrl || url),
     detectPlatform($, page, page.finalUrl || url),
   ]);
 
