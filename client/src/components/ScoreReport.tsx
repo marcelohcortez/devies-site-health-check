@@ -21,21 +21,34 @@ function hostname(url: string): string {
 }
 
 function categoryLabel(key: string): string {
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
+  const labels: Record<string, string> = {
+    SEO:            'SEO',
+    Security:       'Security',
+    Performance:    'Performance',
+    Accessibility:  'Accessibility',
+    HTML_Structure: 'HTML Structure',
+    AI_Readiness:   'AI Readiness',
+    WordPress:      'WordPress',
+    WooCommerce:    'WooCommerce',
+    Strapi:         'Strapi',
+  };
+  return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // ── Score circle (SVG donut) ──────────────────────────────────────────────────
 
-function ScoreCircle({ score }: { score: number }) {
+function ScoreCircle({ score, size = 120 }: { score: number; size?: number }) {
   const { letter, cls } = gradeOf(score);
   const R    = 54;
   const circ = 2 * Math.PI * R;
   const fill = (score / 100) * circ;
 
   return (
-    <div className={`score-circle ${cls}`} aria-label={`Score ${score}, grade ${letter}`}>
+    <div
+      className={`score-circle ${cls}`}
+      aria-label={`Score ${score}, grade ${letter}`}
+      style={{ width: size, height: size }}
+    >
       <svg viewBox="0 0 120 120">
         {/* Track */}
         <circle cx="60" cy="60" r={R} fill="none" stroke="var(--track)" strokeWidth="10" />
@@ -76,7 +89,7 @@ function CategoryBar({ name, score }: { name: string; score: number }) {
   );
 }
 
-// ── Findings panel — hidden pending paywall (T-056) ──────────────────────────
+// ── Findings panel ────────────────────────────────────────────────────────────
 
 const SEV_ORDER  = ['critical', 'warning', 'info', 'positive'] as const;
 const SEV_LABELS: Record<string, string> = { critical: 'Critical', warning: 'Warning', info: 'Info', positive: 'Positive' };
@@ -89,7 +102,7 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
   }, {});
 
   if (Object.keys(grouped).length === 0) {
-    return <p className="no-findings">No issues found — great work!</p>;
+    return <p className="no-findings">No issues found in this category — great work!</p>;
   }
 
   return (
@@ -120,9 +133,59 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
   );
 }
 
+// ── Category tab bar ──────────────────────────────────────────────────────────
+
+type ActiveTab = 'overview' | string;
+
+function CategoryTabBar({
+  categoryScores,
+  activeTab,
+  onTabChange,
+}: {
+  categoryScores: Record<string, number>;
+  activeTab: ActiveTab;
+  onTabChange: (tab: ActiveTab) => void;
+}) {
+  return (
+    <div className="result-tabs" role="tablist" aria-label="Category breakdown">
+      {/* Overview tab */}
+      <button
+        role="tab"
+        aria-selected={activeTab === 'overview'}
+        aria-controls="tabpanel-overview"
+        className={`result-tab-btn${activeTab === 'overview' ? ' active' : ''}`}
+        onClick={() => onTabChange('overview')}
+      >
+        Overview
+      </button>
+
+      {/* One tab per category */}
+      {Object.entries(categoryScores).map(([cat, score]) => {
+        const { cls } = gradeOf(score);
+        const isActive = activeTab === cat;
+        return (
+          <button
+            key={cat}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`tabpanel-${cat}`}
+            className={`result-tab-btn${isActive ? ' active' : ''}`}
+            onClick={() => onTabChange(cat)}
+          >
+            {categoryLabel(cat)}
+            <span className={`cat-tab-score ${cls}`}>{score}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Single site result ────────────────────────────────────────────────────────
 
 function SiteResultCard({ result }: { result: SiteResult }) {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+
   const criticalCount = result.findings.filter(f => f.severity === 'critical').length;
   const warningCount  = result.findings.filter(f => f.severity === 'warning').length;
 
@@ -151,22 +214,61 @@ function SiteResultCard({ result }: { result: SiteResult }) {
         </div>
       </div>
 
-      {/* Category scores */}
-      <div className="categories-grid">
-        {Object.entries(result.category_scores).map(([cat, score]) => (
-          <CategoryBar key={cat} name={cat} score={score} />
-        ))}
-      </div>
+      {/* Category tab bar */}
+      <CategoryTabBar
+        categoryScores={result.category_scores}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
-      {/* CTA */}
-      <div className="cta-box">
-        <p className="cta-text">
-          Need help improving your website health?{' '}
-          Want more information about the issues found?{' '}
-          Reach out to us and let's talk about it.
-        </p>
-        <a className="cta-link" href="mailto:hello@devies.se">hello@devies.se</a>
-      </div>
+      {/* Tab content */}
+      {activeTab === 'overview' ? (
+        <div id="tabpanel-overview" role="tabpanel" aria-label="Overview">
+          {/* All category bars */}
+          <div className="categories-grid">
+            {Object.entries(result.category_scores).map(([cat, score]) => (
+              <CategoryBar key={cat} name={cat} score={score} />
+            ))}
+          </div>
+
+          {/* CTA */}
+          <div className="cta-box">
+            <p className="cta-text">
+              Need help improving your website health?{' '}
+              Want more information about the issues found?{' '}
+              Reach out to us and let's talk about it.
+            </p>
+            <a className="cta-link" href="mailto:hello@devies.se">hello@devies.se</a>
+          </div>
+        </div>
+      ) : (
+        <div
+          id={`tabpanel-${activeTab}`}
+          role="tabpanel"
+          aria-label={categoryLabel(activeTab)}
+          className="cat-detail"
+        >
+          {/* Category score */}
+          <div className="cat-detail-hero">
+            <ScoreCircle score={result.category_scores[activeTab] ?? 0} size={96} />
+            <div>
+              <div className="cat-detail-label">{categoryLabel(activeTab)}</div>
+              <div className="cat-detail-sub">
+                {(() => {
+                  const s = result.category_scores[activeTab] ?? 0;
+                  const { letter } = gradeOf(s);
+                  return `Score: ${s}/100 · Grade ${letter}`;
+                })()}
+              </div>
+            </div>
+          </div>
+
+          {/* Findings for this category */}
+          <FindingsPanel
+            findings={result.findings.filter(f => f.category === activeTab)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -181,13 +283,10 @@ function SiteErrorCard({ result }: { result: { url: string | null; error: string
   );
 }
 
-function SiteResultItem({ result }: { result: SiteResultItem }) {
+function SiteResultItemComp({ result }: { result: SiteResultItem }) {
   if (isSiteError(result)) return <SiteErrorCard result={result} />;
   return <SiteResultCard result={result} />;
 }
-
-// Ensure FindingsPanel is available for future paywall integration (T-056)
-void FindingsPanel;
 
 // ── Root component ────────────────────────────────────────────────────────────
 
@@ -245,8 +344,8 @@ export default function ScoreReport({ results, onReset }: ScoreReportProps) {
         </div>
       )}
 
-      {/* Active site */}
-      <SiteResultItem result={siteResults[selected]} />
+      {/* Active site — key resets category tab state when switching sites */}
+      <SiteResultItemComp key={selected} result={siteResults[selected]} />
     </div>
   );
 }

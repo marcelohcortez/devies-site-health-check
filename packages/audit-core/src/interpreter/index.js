@@ -2,15 +2,13 @@
 /**
  * rule-interpreter.js
  *
- * Drop-in alternative to claude-interpreter.js.
  * Applies static rules based on official guidelines (WCAG 2.1, Google Search Central,
- * OWASP, Lighthouse, WordPress Hardening Guide) to produce scored findings.
+ * OWASP, Lighthouse, WordPress Hardening Guide, GEO/KDD '24) to produce scored findings.
  *
  * No AI calls. No token cost. Instant.
  *
- * INPUT:  scrapedData (from scraper.js)
- * OUTPUT: same shape as claude-interpreter.js
- *   { overall_score, summary, category_scores, findings[], platform, mode: 'rule' }
+ * INPUT:  scrapedData (from scraper.js)  OR  { primary, pages } (from crawl.js)
+ * OUTPUT: { overall_score, summary, category_scores, findings[], platform, mode, pages_crawled }
  *
  * SCORING:
  *   Each category starts at 100.
@@ -29,6 +27,7 @@ const STRAPI_RULES        = require('../rules/strapi');
 const GEO_RULES           = require('../rules/geo');
 const MULTIPAGE_RULES     = require('../rules/multipage');
 
+// GEO is always active — all homepage rules run unconditionally
 const BASE_RULES = [
   ...SEO_RULES,
   ...SECURITY_RULES,
@@ -37,21 +36,14 @@ const BASE_RULES = [
   ...HTML_RULES,
   ...WP_RULES,
   ...STRAPI_RULES,
+  ...GEO_RULES,
 ];
 
 // ─── CATEGORY WEIGHTS (for overall score) ────────────────────────────────────
 
-// Default weights — no GEO
+// AI_Readiness (GEO) is always a base category — 15% weight.
+// SEO and Security each drop 5% vs the old no-GEO weights.
 const BASE_WEIGHTS = {
-  SEO:            0.25,
-  Security:       0.25,
-  Performance:    0.20,
-  Accessibility:  0.15,
-  HTML_Structure: 0.15,
-};
-
-// Weights when --geo is enabled — AI_Readiness gets 15%, others scale down
-const BASE_WEIGHTS_GEO = {
   SEO:            0.20,
   Security:       0.20,
   Performance:    0.15,
@@ -60,10 +52,10 @@ const BASE_WEIGHTS_GEO = {
   AI_Readiness:   0.15,
 };
 
-// If WordPress or WooCommerce is detected, add their category to the mix.
-// Redistribute weights proportionally to keep total = 1.0
-function buildWeights(categoryScores, useGeo) {
-  const active = { ...(useGeo ? BASE_WEIGHTS_GEO : BASE_WEIGHTS) };
+// If WordPress, WooCommerce, or Strapi is detected, add their category to
+// the mix at 10%, redistributing proportionally from all base weights.
+function buildWeights(categoryScores) {
+  const active = { ...BASE_WEIGHTS };
   const extra  = [];
 
   if ('WordPress' in categoryScores)   extra.push('WordPress');
@@ -72,9 +64,8 @@ function buildWeights(categoryScores, useGeo) {
 
   if (extra.length === 0) return active;
 
-  // Give each extra category 10% weight, scaled down from base weights
   const extraWeight = 0.10 * extra.length;
-  const scale       = (1 - extraWeight);
+  const scale       = 1 - extraWeight;
   const scaled      = Object.fromEntries(Object.entries(active).map(([k, v]) => [k, v * scale]));
   for (const cat of extra) scaled[cat] = 0.10;
 
@@ -107,7 +98,7 @@ function buildSummary(data, overall, categoryScores, findings) {
     .filter(([, s]) => s < 60)
     .sort(([, a], [, b]) => a - b)
     .slice(0, 2)
-    .map(([k]) => k.replace('_', ' '));
+    .map(([k]) => k.replace(/_/g, ' '));
 
   let issueText = '';
   if (criticals > 0 && warnings > 0) {
@@ -125,7 +116,7 @@ function buildSummary(data, overall, categoryScores, findings) {
   return (
     `Automated rule-based analysis of ${url}. ` +
     `Overall score: ${overall}/100 (Grade ${grade})${issueText}. ` +
-    `Findings are generated from rules based on WCAG 2.1 AA, Google Search Central, OWASP, and Lighthouse guidelines.` +
+    `Findings are generated from rules based on WCAG 2.1 AA, Google Search Central, OWASP, Lighthouse, and GEO guidelines.` +
     focusText
   );
 }
@@ -139,35 +130,30 @@ function buildSummary(data, overall, categoryScores, findings) {
  *   - Plain scrapedData (FullScrapedData from scrape())
  *   - SiteData { primary: FullScrapedData, pages: LightScrapedData[] } from crawl()
  *
- * @param {object} input             - scrapedData OR { primary, pages }
- * @param {object} [options={}]
- * @param {boolean} [options.geo]    - include GEO / AI_Readiness rules (default: false)
- * @returns {object}                 - { overall_score, summary, category_scores, findings, platform, mode, pages_crawled }
+ * @param {object} input    - scrapedData OR { primary, pages }
+ * @param {object} [options] - ignored; kept for backward compat (options.geo is no-op)
+ * @returns {object}         - { overall_score, summary, category_scores, findings, platform, mode, pages_crawled }
  */
-function interpret(input, options = {}) {
+function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
   // ── Detect input shape ───────────────────────────────────────────────────
-  const isSiteData  = input && typeof input === 'object' && 'primary' in input;
-  const scrapedData = isSiteData ? input.primary : input;
-  const pages       = isSiteData ? (input.pages || []) : [];
+  const isSiteData   = input && typeof input === 'object' && 'primary' in input;
+  const scrapedData  = isSiteData ? input.primary : input;
+  const pages        = isSiteData ? (input.pages || []) : [];
   const pagesCrawled = 1 + pages.length;
 
-  const useGeo = options.geo === true;
   const isWP     = scrapedData.platform?.wordpress?.detected === true;
   const isWC     = scrapedData.platform?.woocommerce?.detected === true;
   const isStrapi = scrapedData.platform?.strapi?.detected === true;
 
-  // ── Run homepage rules ───────────────────────────────────────────────────
-  const findings   = [];
-  const penalties  = {};   // { category: totalPenalty }
+  // ── Run homepage rules (all 150 — including GEO) ─────────────────────────
+  const findings  = [];
+  const penalties = {};   // { category: totalPenalty }
 
-  const activeRules = useGeo ? [...BASE_RULES, ...GEO_RULES] : BASE_RULES;
-
-  for (const rule of activeRules) {
+  for (const rule of BASE_RULES) {
     let fired = false;
     try {
       fired = rule.check(scrapedData);
     } catch {
-      // rule check crashed — skip silently
       continue;
     }
 
@@ -201,7 +187,7 @@ function interpret(input, options = {}) {
     for (const rule of MULTIPAGE_RULES) {
       let fired = false;
       try {
-        fired = rule.check(input); // receives full siteData { primary, pages }
+        fired = rule.check(input);
       } catch {
         continue;
       }
@@ -235,10 +221,10 @@ function interpret(input, options = {}) {
   // ── Build category scores ────────────────────────────────────────────────
   // Active categories are strictly the known base set + detected platforms.
   // We do NOT expand by Object.keys(penalties) — that could pull unexpected
-  // categories (e.g. a mis-categorised rule) into buildWeights and silently
-  // alter the weighted average.
-  const activeCategories = ['SEO', 'Security', 'Performance', 'Accessibility', 'HTML_Structure'];
-  if (useGeo)   activeCategories.push('AI_Readiness');
+  // categories into buildWeights and silently alter the weighted average.
+  const activeCategories = [
+    'SEO', 'Security', 'Performance', 'Accessibility', 'HTML_Structure', 'AI_Readiness',
+  ];
   if (isWP)     activeCategories.push('WordPress');
   if (isWC)     activeCategories.push('WooCommerce');
   if (isStrapi) activeCategories.push('Strapi');
@@ -249,9 +235,9 @@ function interpret(input, options = {}) {
   }
 
   // ── Overall score ────────────────────────────────────────────────────────
-  const weights = buildWeights(categoryScores, useGeo);
-  let   totalWeight = 0;
-  let   weightedSum = 0;
+  const weights = buildWeights(categoryScores);
+  let totalWeight = 0;
+  let weightedSum = 0;
 
   for (const [cat, score] of Object.entries(categoryScores)) {
     const w = weights[cat] || 0;
@@ -262,7 +248,10 @@ function interpret(input, options = {}) {
 
   const overall = totalWeight > 0
     ? Math.round(weightedSum / totalWeight)
-    : Math.round(Object.values(categoryScores).reduce((s, v) => s + v, 0) / Math.max(Object.keys(categoryScores).length, 1));
+    : Math.round(
+        Object.values(categoryScores).reduce((s, v) => s + v, 0) /
+        Math.max(Object.keys(categoryScores).length, 1)
+      );
 
   // ── Summary ──────────────────────────────────────────────────────────────
   const summary = buildSummary(scrapedData, overall, categoryScores, findings);

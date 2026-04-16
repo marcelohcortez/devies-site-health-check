@@ -1,7 +1,8 @@
 export interface Finding {
-  severity: 'critical' | 'warning' | 'info' | 'positive';
-  title: string;
-  finding?: string;
+  category:    string;
+  severity:    'critical' | 'warning' | 'info' | 'positive';
+  title:       string;
+  finding?:    string;
   description?: string;
   how_to_fix?: string;
 }

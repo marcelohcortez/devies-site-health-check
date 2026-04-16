@@ -196,6 +196,19 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Add `pages_crawled: 1 + (input.pages?.length ?? 0)` to the returned result object
   - No changes to scoring weights or category model
 
+- [x] **T-031c** Make GEO (AI_Readiness) always active — **Priority: HIGH**
+  - In `packages/audit-core/src/interpreter/index.js`:
+    - Remove the `useGeo` / `options.geo` flag — GEO rules now always fire
+    - Replace `BASE_WEIGHTS` (no-GEO) with a single weight set that always includes `AI_Readiness: 0.15`
+    - New base weights: SEO 20%, Security 20%, Performance 15%, Accessibility 15%, HTML_Structure 15%, AI_Readiness 15% (per SPEC §7.3)
+    - `buildWeights()` no longer needs the `useGeo` parameter — simplify accordingly
+    - Remove `BASE_WEIGHTS_GEO` — it becomes the only weight set
+    - GEO rules are appended to `BASE_RULES` unconditionally (or merged into `activeRules` without flag)
+    - `activeCategories` always includes `'AI_Readiness'`
+    - `interpret(input, options)` signature preserved for backward compat; `options.geo` silently ignored
+  - In `api/routes/audit.js`: remove `{ geo: true }` option if it was being passed (no-op cleanup)
+  - Verify with smoke test: `interpret({ seo: {}, html: {}, ... })` returns `category_scores.AI_Readiness` as a number
+
 - [ ] **T-039** [TEST] Integration test for `crawl` + `interpret`
   - `crawl('https://example.com', { maxPages: 3 })` returns `{ primary, pages }` with `pages.length >= 0`
   - `interpret(siteData).pages_crawled` equals `1 + siteData.pages.length`
@@ -351,6 +364,22 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Source: current `audit-web/client/src/components/ScoreReport.jsx`
   - Shows overall score circle, category bars only — findings tab is hidden (paywall, see T-056)
   - CTA block at the bottom: "Need help improving your website health?" → mailto:hello@devies.se
+
+- [x] **T-057** Add category tab bar to ScoreReport (F-004 update) — **Priority: HIGH**
+  - Replace the current "categories grid + CTA" block inside `SiteResultCard` with a two-level tab system
+  - First tab: **"Overview"** (default) — renders existing `CategoryBars` grid + CTA block (no change to this view)
+  - Remaining tabs: one per active category key in `result.category_scores` (e.g. "SEO · 82", "Security · 65")
+  - Tab label format: `{categoryLabel(cat)} · {score}` with the grade colour class applied to the score badge
+  - Active category tab shows:
+    - `<ScoreCircle score={categoryScore} />` (reuse existing component)
+    - `<FindingsPanel findings={result.findings.filter(f => f.category === cat)} />`
+    - Empty state "No issues found in this category" when no findings for that category
+  - Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA
+  - Tab bar overflows horizontally on narrow viewports (`overflow-x: auto; white-space: nowrap`)
+  - Active tab style: underline or fill matching the grade colour
+  - Remove the `void FindingsPanel;` dead-code stub — `FindingsPanel` is now used
+  - Category tab state resets to "Overview" when the site-selector tab changes (different URL selected)
+  - Depends on: T-051 (ScoreReport), T-053 (theme)
 
 - [ ] **T-056** Paywall gate for findings
   - `FindingsPanel` component already exists in `ScoreReport.jsx` (kept, not rendered)

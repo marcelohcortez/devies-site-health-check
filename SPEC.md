@@ -297,19 +297,35 @@ more website URLs before starting the audit.
 
 ### F-004 — Score Report (in-browser display)
 
-**Description:** The web view shown after a successful audit.
+**Description:** The web view shown after a successful audit. Has two levels of
+tab navigation: (1) a site-selector tab bar when multiple URLs are audited, and
+(2) a category tab bar within each site result for switching between an overview
+and per-category detail views.
 
 **Acceptance criteria:**
+
+**Overall layout:**
 - [ ] Overall score displayed as a circular progress arc (0–100) with grade letter (A/B/C/D/F)
 - [ ] Grade scale: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F < 60
-- [ ] Each category shown as a labelled progress bar with score + grade
-- [ ] Findings tab lists all findings grouped by severity in order: Critical → Warning → Info → Positive
-- [ ] Each finding card shows: title, description, "Fix:" instruction
 - [ ] Count badges (e.g. "3 critical") visible in the hero section
 - [ ] "New Audit" button resets to the form
 - [ ] Report is readable at 320 px width (iframe-safe)
 - [ ] Report header shows the Devies logo (`https://www.devies.se/wp-content/uploads/2025/11/Devies-Group-logo.svg`) followed by the text "Site Health Checker" on the line below
 - [ ] Logo is rendered as an `<img>` with a descriptive `alt` attribute; text rendered as a separate element beneath it
+
+**Category tab bar (new):**
+- [ ] Below the score hero, a horizontal tab bar with one tab per active category plus an "Overview" tab first
+- [ ] "Overview" is the default active tab and shows the current layout: all category bars + CTA block
+- [ ] Each category tab label shows the category name and its score (e.g. "SEO · 82")
+- [ ] The category tab label is colour-coded by grade (green/yellow/orange/red) matching the bar colours
+- [ ] Clicking a category tab shows a **category detail view** for that category:
+  - Category score circle (same SVG component, full-size) + grade
+  - All findings for that category, grouped by severity (Critical → Warning → Info → Positive)
+  - Each finding card shows: title, description, "Fix:" instruction
+  - If no findings for the category: "No issues found in this category"
+- [ ] Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern
+- [ ] Active tab has a visible active indicator (underline or background highlight)
+- [ ] Tab bar scrolls horizontally on narrow viewports (no wrapping)
 
 ---
 
@@ -816,25 +832,31 @@ const result   = interpret(siteData);
 }
 ```
 
-### 7.3 Scoring model (unchanged from site-auditor)
+### 7.3 Scoring model
 
 - Each category starts at **100**
 - Failing rule deducts `weight` from category score (floor 0)
 - `positive` rules generate findings but do not affect scores
 - Overall score = weighted average of active categories
 
-**Base weights:**
+**Base weights (GEO always active):**
 
-| Category       | Weight |
-|----------------|--------|
-| SEO            | 25%    |
-| Security       | 25%    |
-| Performance    | 20%    |
-| Accessibility  | 15%    |
-| HTML_Structure | 15%    |
-| WordPress      | +10% (when detected, redistributed) |
-| WooCommerce    | +10% (when detected, redistributed) |
-| Strapi         | +10% (when detected, redistributed) |
+| Category       | Weight | Notes |
+|----------------|--------|-------|
+| SEO            | 20%    | |
+| Security       | 20%    | |
+| Performance    | 15%    | |
+| Accessibility  | 15%    | |
+| HTML_Structure | 15%    | |
+| AI_Readiness   | 15%    | Always active (GEO rules — not opt-in) |
+| WordPress      | +10%   | When detected — redistributed proportionally from all base weights |
+| WooCommerce    | +10%   | When detected — redistributed proportionally from all base weights |
+| Strapi         | +10%   | When detected — redistributed proportionally from all base weights |
+
+> **Why GEO is always on:** AI search engines (ChatGPT, Perplexity, Google AI
+> Overviews) now account for significant discovery traffic. GEO readiness is a
+> first-class quality signal, not an optional add-on. Making it always active
+> ensures every report surfaces AI visibility issues without requiring a flag.
 
 ### 7.4 Rule inventory
 
@@ -847,10 +869,12 @@ const result   = interpret(siteData);
 | `rules/html.js`        | HTML_Structure  |  9    |
 | `rules/wordpress.js`   | WordPress + WooCommerce | 23 |
 | `rules/strapi.js`      | Strapi          | 27    |
-| **Total**          |                 | **125** |
+| `rules/geo.js`         | AI_Readiness    | 15    |
+| `rules/multipage.js`   | multi-category  | 10    |
+| **Total**          |                 | **150** |
 
-> [TODO: Note any rules that need modification after being copied — e.g. rules
-> that import from `site-auditor`-specific paths]
+> GEO rules (`rules/geo.js`) are always active — no flag required. They fire on
+> every audit and contribute to the `AI_Readiness` category (15% base weight).
 
 ---
 
@@ -878,10 +902,15 @@ const result   = interpret(siteData);
   <ScoreReport>                S-003
     <SiteTabBar />             only shown for multi-URL results
     <SiteResult>
-      <ScoreCircle />          SVG donut arc
-      <CategoryBars />         one bar per category
-      <FindingsPanel />        grouped by severity
-        <FindingCard />
+      <ScoreCircle />          SVG donut arc (overall score)
+      <CategoryTabBar />       "Overview" + one tab per active category  ← NEW
+      [activeTab === 'overview']
+        <CategoryBars />       one bar per category
+        <CtaBlock />           CTA + mailto link
+      [activeTab === category]
+        <ScoreCircle />        category score
+        <FindingsPanel />      findings for this category only
+          <FindingCard />
     </SiteResult>
   </ScoreReport>
 </App>
