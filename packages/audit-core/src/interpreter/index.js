@@ -27,6 +27,7 @@ const HTML_RULES          = require('../rules/html');
 const WP_RULES            = require('../rules/wordpress');
 const STRAPI_RULES        = require('../rules/strapi');
 const GEO_RULES           = require('../rules/geo');
+const MULTIPAGE_RULES     = require('../rules/multipage');
 
 const BASE_RULES = [
   ...SEO_RULES,
@@ -134,18 +135,28 @@ function buildSummary(data, overall, categoryScores, findings) {
 /**
  * Interpret scraped data using static rules.
  *
- * @param {object} scrapedData       - output from scraper.js
+ * Accepts two input shapes (backward compatible):
+ *   - Plain scrapedData (FullScrapedData from scrape())
+ *   - SiteData { primary: FullScrapedData, pages: LightScrapedData[] } from crawl()
+ *
+ * @param {object} input             - scrapedData OR { primary, pages }
  * @param {object} [options={}]
  * @param {boolean} [options.geo]    - include GEO / AI_Readiness rules (default: false)
- * @returns {object}                 - same shape as claude-interpreter.js output
+ * @returns {object}                 - { overall_score, summary, category_scores, findings, platform, mode, pages_crawled }
  */
-function interpret(scrapedData, options = {}) {
+function interpret(input, options = {}) {
+  // ── Detect input shape ───────────────────────────────────────────────────
+  const isSiteData  = input && typeof input === 'object' && 'primary' in input;
+  const scrapedData = isSiteData ? input.primary : input;
+  const pages       = isSiteData ? (input.pages || []) : [];
+  const pagesCrawled = 1 + pages.length;
+
   const useGeo = options.geo === true;
   const isWP     = scrapedData.platform?.wordpress?.detected === true;
   const isWC     = scrapedData.platform?.woocommerce?.detected === true;
   const isStrapi = scrapedData.platform?.strapi?.detected === true;
 
-  // ── Run all rules ────────────────────────────────────────────────────────
+  // ── Run homepage rules ───────────────────────────────────────────────────
   const findings   = [];
   const penalties  = {};   // { category: totalPenalty }
 
@@ -162,7 +173,6 @@ function interpret(scrapedData, options = {}) {
 
     if (!fired) continue;
 
-    // Build the finding object
     let findingText = '';
     try {
       findingText = rule.finding(scrapedData);
@@ -181,9 +191,44 @@ function interpret(scrapedData, options = {}) {
       reference:  rule.reference || '',
     });
 
-    // Accumulate penalty for non-positive findings
     if (rule.severity !== 'positive' && rule.weight > 0) {
       penalties[rule.category] = (penalties[rule.category] || 0) + rule.weight;
+    }
+  }
+
+  // ── Run multipage aggregate rules (only when inner pages are present) ────
+  if (pages.length > 0) {
+    for (const rule of MULTIPAGE_RULES) {
+      let fired = false;
+      try {
+        fired = rule.check(input); // receives full siteData { primary, pages }
+      } catch {
+        continue;
+      }
+
+      if (!fired) continue;
+
+      let findingText = '';
+      try {
+        findingText = rule.finding(input);
+      } catch {
+        findingText = rule.title;
+      }
+
+      findings.push({
+        category:   rule.category,
+        severity:   rule.severity,
+        title:      rule.title,
+        finding:    findingText,
+        why:        rule.why,
+        how_to_fix: rule.how_to_fix,
+        impact:     rule.impact,
+        reference:  rule.reference || '',
+      });
+
+      if (rule.severity !== 'positive' && rule.weight > 0) {
+        penalties[rule.category] = (penalties[rule.category] || 0) + rule.weight;
+      }
     }
   }
 
@@ -229,6 +274,7 @@ function interpret(scrapedData, options = {}) {
     findings,
     platform:        scrapedData.platform?.platform || 'unknown',
     mode:            'rule',
+    pages_crawled:   pagesCrawled,
   };
 }
 

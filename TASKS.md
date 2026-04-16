@@ -74,7 +74,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Ignore: `node_modules`, `.turbo`, `dist`, `.next`, `*.db`, `.env*.local`
 
 - [ ] **T-016** Set up `.env.example` at workspace root
-  - Document all variables from SPEC.md §10.1
+  - Document all variables from SPEC.md §10.1 (including `AUDIT_MAX_PAGES`)
 
 ---
 
@@ -148,6 +148,63 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
+## Phase 2b — Multi-page Crawl (F-011)
+
+> Requires: T-020 (scraper), T-031 (interpreter). Adds crawl capability to `audit-core`.
+> Goal: `crawl(url, { maxPages })` is the new default entry point used by the API route.
+
+- [x] **T-034** Implement `discoverLinks(primary)` in `packages/audit-core/src/scraper/index.js`
+  - Extract `<a href>` from `primary.body` (reuse Cheerio already loaded during scrape)
+  - Filter: same origin only, no query params, no fragments, no mailto/tel
+  - Normalise: resolve relative URLs, strip trailing slashes, lowercase path
+  - Deduplicate by normalised path
+  - Return up to `maxPages * 4` candidates (over-fetch so we have fallbacks if pages 404)
+  - Export as `discoverLinks(primary, baseUrl)` — pure function, no HTTP calls
+
+- [x] **T-035** Implement `scrapePage(url)` in `packages/audit-core/src/scraper/index.js`
+  - Lightweight scrape: HTTP GET + HTML parse only — **no** security probes, **no** WP/Strapi probes, **no** robots/sitemap fetch, **no** link-checking
+  - Returns `LightScrapedData` (shape documented in SPEC §7.1)
+  - Reuses `fetchUrl()` for the HTTP call (SSRF protection inherited)
+  - 10 s timeout (pass as option to `fetchUrl`)
+  - On non-200 status: still return the object, set `status_code` to the actual status
+  - On fetch error (timeout, DNS fail): return `null` — caller skips the page
+  - Export as named export `scrapePage(url)`
+
+- [x] **T-036** Implement `crawl(url, { maxPages })` in `packages/audit-core/src/scraper/index.js`
+  - Step 1: `await scrape(url)` → `primary`
+  - Step 2: `discoverLinks(primary, url)` → candidate URLs
+  - Step 3: Take first `maxPages - 1` candidates (after dedup); fetch all in parallel via `Promise.allSettled`
+    - Each inner page: `scrapePage(innerUrl)` with 10 s timeout
+  - Step 4: Filter out `null` results (failed fetches)
+  - Step 5: Return `{ primary, pages: LightScrapedData[] }`
+  - Overall crawl: `Promise.race` against a 60 s timeout; partial results returned if timeout fires
+  - `maxPages` defaults to `parseInt(process.env.AUDIT_MAX_PAGES) || 5`; clamp to min 1
+  - Export as named export `crawl(url, opts)`
+  - Update `packages/audit-core/src/index.js` to re-export `crawl` and `scrapePage`
+
+- [x] **T-037** Add aggregate rules for multi-page findings
+  - New file: `packages/audit-core/src/rules/multipage.js`
+  - Implement the 10 aggregate rules from SPEC F-011 (see rule table in spec)
+  - Rule `check(d)` receives the full `siteData` (`{ primary, pages }`); when called with plain `scrapedData` (backward compat), return `false`
+  - Rule `finding(d)` lists affected page paths, e.g. `"Missing title on 2 pages: /about, /contact"`
+  - All 10 rules: `severity: 'warning'`, weights between 3–8 (lower than homepage equivalents — inner pages are supplemental signal)
+  - Add `multipage.js` to the rule-loader in `packages/audit-core/src/interpreter/index.js`
+
+- [x] **T-038** Update `interpret()` to accept `siteData` shape
+  - `interpret(input)` — detect shape: if `input.primary` exists, use `input.primary` as `scrapedData` for the 125 homepage rules; also pass `input` to multipage rules
+  - If `input` has no `.primary` key, treat it as plain `scrapedData` (unchanged single-page path)
+  - Add `pages_crawled: 1 + (input.pages?.length ?? 0)` to the returned result object
+  - No changes to scoring weights or category model
+
+- [ ] **T-039** [TEST] Integration test for `crawl` + `interpret`
+  - `crawl('https://example.com', { maxPages: 3 })` returns `{ primary, pages }` with `pages.length >= 0`
+  - `interpret(siteData).pages_crawled` equals `1 + siteData.pages.length`
+  - `interpret(siteData).findings` is an array (may or may not include multipage findings)
+  - `interpret(scrapedData)` (old shape) still returns valid result with `pages_crawled: 1`
+  - `crawl('https://example.com', { maxPages: 1 })` returns `pages: []` (no inner pages)
+
+---
+
 ## Phase 3 — API
 
 > Requires: Phase 2 complete, T-003 (database), T-000 (framework).
@@ -164,11 +221,11 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 - [x] **T-042** Implement `POST /api/audit` endpoint
   - Validate: name (required), email (valid format), urls (array, 1–10)
-  - Run `scrape + interpret` for each URL in parallel (`Promise.all`)
-  - Assemble `audit_data.json` per SPEC F-005 shape for each URL
+  - Run `crawl + interpret` for each URL in parallel (`Promise.all`) — **updated from `scrape + interpret` per F-011**
+  - Assemble `audit_data.json` per SPEC F-005 shape for each URL (include `pages[]` array)
   - Save each result + `data_json` to `submissions` table (T-041)
-  - Return interpretation JSON per SPEC §5 (do NOT include `data_json` in response)
-  - Depends on: T-031, T-040
+  - Return interpretation JSON per SPEC §5 (do NOT include `data_json` in response); include `pages_crawled`
+  - Depends on: T-031, T-036, T-040
 
 - [x] **T-042b** Normalise URLs before scraping in `POST /api/audit`
   - Prepend `https://` to any URL that lacks a protocol (`http://` or `https://`)

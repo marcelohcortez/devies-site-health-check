@@ -8,7 +8,7 @@
  *   const result      = interpret(scrapedData);
  */
 
-const { scrape }     = require('./scraper/index.js');
+const { scrape, crawl, scrapePage, discoverLinks } = require('./scraper/index.js');
 const { interpret }  = require('./interpreter/index.js');
 
-module.exports = { scrape, interpret };
+module.exports = { scrape, crawl, scrapePage, discoverLinks, interpret };

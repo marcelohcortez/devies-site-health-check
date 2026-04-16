@@ -24,7 +24,7 @@ const { sanitizeText } = require('../lib/sanitize');
 
 // ── Audit engine ──────────────────────────────────────────────────────────────
 
-const { scrape, interpret: ruleInterpret } = require('@audit-web/audit-core');
+const { crawl, interpret: ruleInterpret } = require('@audit-web/audit-core');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 
@@ -67,28 +67,33 @@ function isPrivateUrl(urlString) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function runAudit(url) {
-  const scrapedData = await scrape(url);
+  // crawl() fetches the homepage (full scrape) + up to AUDIT_MAX_PAGES-1 inner
+  // pages (lightweight). Returns { primary, pages }.
+  const siteData = await crawl(url);
 
-  // scrape() returns { error, ... } on fetch failure — fail closed so the
-  // interpreter never scores a dead/unreachable URL as 100.
-  if (scrapedData.error) {
-    throw new Error(scrapedData.error);
+  // crawl() surfaces the homepage error via siteData.primary.error
+  if (siteData.primary.error) {
+    throw new Error(siteData.primary.error);
   }
 
-  const interpretation = ruleInterpret(scrapedData);
+  const interpretation = ruleInterpret(siteData);
+  const { primary }    = siteData;
 
-  // Assemble the audit_data shape — compatible with report_generator.py
+  // Assemble the audit_data shape — compatible with report_generator.py.
+  // Top-level http/seo/performance/security/html fields come from the homepage
+  // (primary). Inner pages are stored in pages[] for reference.
   const auditData = {
     url,
     generated_at:  new Date().toISOString(),
     report_mode:   'rule',
-    platform:      scrapedData.platform,
-    platform_name: scrapedData.platform?.platform || 'unknown',
-    http:          scrapedData.http,
-    seo:           scrapedData.seo,
-    performance:   scrapedData.performance,
-    security:      scrapedData.security,
-    html:          scrapedData.html,
+    platform:      primary.platform,
+    platform_name: primary.platform?.platform || 'unknown',
+    http:          primary.http,
+    seo:           primary.seo,
+    performance:   primary.performance,
+    security:      primary.security,
+    html:          primary.html,
+    pages:         siteData.pages,
     interpretation,
     token_usage:   { total_tokens: 0, total_cost_formatted: '$0.00' },
   };
@@ -187,6 +192,7 @@ router.post('/audit', async (req, res) => {
         category_scores: interpretation.category_scores,
         findings:        interpretation.findings,
         platform:        interpretation.platform,
+        pages_crawled:   interpretation.pages_crawled,
       });
 
       // ── Send result email — fail-silent ─────────────────────────────────

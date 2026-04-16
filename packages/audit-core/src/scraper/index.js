@@ -1125,6 +1125,264 @@ async function scrape(url) {
   };
 }
 
+// ─── LINK DISCOVERY ───────────────────────────────────────────────────────────
+
+/**
+ * Extract crawlable internal links from the homepage scrape result.
+ * Returns unique, normalised same-origin absolute URLs, sorted in insertion order.
+ *
+ * @param {object} primary  - FullScrapedData from scrape()
+ * @param {string} baseUrl  - canonical base URL (used to resolve relative refs)
+ * @param {number} [limit]  - max candidates to return (default: 20)
+ * @returns {string[]}
+ */
+function discoverLinks(primary, baseUrl, limit = 20) {
+  let parsed;
+  try { parsed = new URL(baseUrl); } catch { return []; }
+
+  const origin    = `${parsed.protocol}//${parsed.hostname}`;
+  const seenPaths = new Set();
+  // Always skip the homepage itself (path "/" or same as the scraped path)
+  seenPaths.add('/');
+  const homePath = parsed.pathname.replace(/\/+$/, '') || '/';
+  seenPaths.add(homePath);
+
+  const candidates = [];
+  const raw = primary.html?.links?.internal_sample || [];
+
+  for (const href of raw) {
+    let normUrl;
+    try {
+      const u = new URL(href, origin);
+      // Same origin only
+      if (`${u.protocol}//${u.hostname}` !== origin) continue;
+      // No query strings, no fragments
+      if (u.search || u.hash) continue;
+      // Normalise: strip trailing slash (except root), lowercase the path
+      const path = (u.pathname.replace(/\/+$/, '') || '/').toLowerCase();
+      if (seenPaths.has(path)) continue;
+      seenPaths.add(path);
+      normUrl = `${origin}${path}`;
+    } catch {
+      continue;
+    }
+
+    // Skip static assets and non-content paths
+    const lc = normUrl.toLowerCase();
+    if (/\.(css|js|png|jpg|jpeg|gif|svg|ico|webp|avif|woff|woff2|ttf|eot|pdf|xml|json|zip|gz|tar)(\?|$)/.test(lc)) continue;
+    if (/\/(wp-admin|wp-login|wp-cron|xmlrpc|feed|trackback|tag\/|category\/|author\/|page\/\d)/.test(lc)) continue;
+
+    candidates.push(normUrl);
+    if (candidates.length >= limit) break;
+  }
+
+  return candidates;
+}
+
+// ─── LIGHTWEIGHT PAGE SCRAPE ──────────────────────────────────────────────────
+
+const PAGE_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Lightweight scrape of a single inner page.
+ * HTTP GET + HTML parse only — no security probes, no WP/Strapi probes,
+ * no robots/sitemap, no link-checking.
+ *
+ * @param {string} url
+ * @returns {Promise<object|null>}  LightScrapedData, or null on fetch error / timeout
+ */
+async function scrapePage(url) {
+  const timeoutPromise = new Promise(resolve =>
+    setTimeout(() => resolve(null), PAGE_FETCH_TIMEOUT_MS)
+  );
+
+  const fetchPromise = (async () => {
+    const page = await fetchUrl(url);
+    // Network-level failure (no status code) → skip
+    if (!page.ok && !page.statusCode) return null;
+
+    const statusCode     = page.statusCode || 0;
+    const responseTimeMs = page.responseTimeMs || 0;
+    const body           = page.body || '';
+
+    let $;
+    try { $ = cheerio.load(body); } catch { $ = cheerio.load(''); }
+
+    // ── SEO basics ──
+    const titleText = $('title').first().text().trim();
+    const metaDesc  = $('meta[name="description"]').attr('content') || null;
+    const canonical = $('link[rel="canonical"]').attr('href') || null;
+
+    // ── Headings ──
+    const h1 = [], h2 = [];
+    $('h1').each((_, el) => { const t = $(el).text().trim(); if (t) h1.push(t); });
+    $('h2').each((_, el) => { const t = $(el).text().trim(); if (t) h2.push(t); });
+
+    // ── Images ──
+    let totalImages = 0, missingAlt = 0, emptyAlt = 0;
+    $('img').each((_, el) => {
+      totalImages++;
+      const alt = $(el).attr('alt');
+      if (alt === undefined) missingAlt++;
+      if (alt === '')        emptyAlt++;
+    });
+
+    // ── Links ──
+    let internalCount = 0, externalCount = 0, emptyTextCount = 0;
+    let baseParsed;
+    try { baseParsed = new URL(page.finalUrl || url); } catch { baseParsed = null; }
+    const baseHost = baseParsed?.hostname || '';
+    $('a[href]').each((_, el) => {
+      const href       = $(el).attr('href') || '';
+      const text       = $(el).text().trim();
+      const ariaLabel  = $(el).attr('aria-label') || $(el).attr('title') || '';
+      if (!text && !ariaLabel) emptyTextCount++;
+      if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      try {
+        const abs = href.startsWith('http') ? new URL(href) : new URL(href, page.finalUrl || url);
+        if (abs.hostname === baseHost) internalCount++;
+        else externalCount++;
+      } catch { /* malformed href */ }
+    });
+
+    // ── Semantic basics ──
+    const langAttr = $('html').attr('lang') || null;
+    const hasMain  = $('main').length > 0;
+    const hasNav   = $('nav').length > 0;
+
+    // ── Forms ──
+    let inputsWithoutLabel = 0;
+    $('form').each((_, formEl) => {
+      $(formEl).find('input, textarea, select').each((_, inputEl) => {
+        const id   = $(inputEl).attr('id');
+        const type = $(inputEl).attr('type') || 'text';
+        if (type === 'hidden' || type === 'submit') return;
+        const hasLabel  = id ? $(`label[for="${id}"]`).length > 0 : false;
+        const ariaLabel = $(inputEl).attr('aria-label');
+        if (!hasLabel && !ariaLabel) inputsWithoutLabel++;
+      });
+    });
+
+    // ── Duplicate IDs ──
+    const allIds = [];
+    $('[id]').each((_, el) => { allIds.push($(el).attr('id')); });
+    const idCounts  = allIds.reduce((acc, id) => { acc[id] = (acc[id] || 0) + 1; return acc; }, {});
+    const dupIdCount = Object.values(idCounts).filter(c => c > 1).length;
+
+    // ── Performance basics ──
+    const pageSizeBytes = page.bodyBytes || 0;
+    let rbScripts = 0, rbStyles = 0;
+    $('head script[src]').each((_, el) => {
+      if (!$(el).attr('defer') && !$(el).attr('async')) rbScripts++;
+    });
+    $('head link[rel="stylesheet"]').each((_, el) => {
+      const media = $(el).attr('media') || 'all';
+      if (media === 'all' || media === 'screen' || !media) rbStyles++;
+    });
+
+    // ── Security basics ──
+    const isHttps = (page.finalUrl || url).startsWith('https://');
+    let mixedContentCount = 0;
+    if (isHttps) {
+      $('img[src^="http:"], script[src^="http:"], link[href^="http:"], iframe[src^="http:"]').each(() => {
+        mixedContentCount++;
+      });
+    }
+
+    return {
+      url:              page.finalUrl || url,
+      status_code:      statusCode,
+      response_time_ms: responseTimeMs,
+      seo: {
+        title: {
+          text:      titleText || null,
+          missing:   !titleText,
+          too_short: titleText.length > 0 && titleText.length < 30,
+          too_long:  titleText.length > 60,
+        },
+        meta_description: {
+          text:    metaDesc,
+          missing: !metaDesc,
+        },
+        canonical,
+        h1_count: h1.length,
+      },
+      html: {
+        headings: { h1, h2 },
+        images:   { total: totalImages, missing_alt: missingAlt, empty_alt: emptyAlt },
+        links:    { internal_count: internalCount, external_count: externalCount, empty_text_count: emptyTextCount },
+        semantic: { has_main: hasMain, has_nav: hasNav, lang_attr: langAttr },
+        forms:    { total_inputs_without_label: inputsWithoutLabel },
+        duplicate_ids_count: dupIdCount,
+      },
+      performance: {
+        page_size_bytes: pageSizeBytes,
+        render_blocking: { scripts_count: rbScripts, styles_count: rbStyles },
+      },
+      security: {
+        https:               isHttps,
+        mixed_content_count: mixedContentCount,
+      },
+    };
+  })();
+
+  return Promise.race([fetchPromise, timeoutPromise]);
+}
+
+// ─── MULTI-PAGE CRAWL ─────────────────────────────────────────────────────────
+
+const CRAWL_MAX_PAGES_DEFAULT = 5;
+const CRAWL_TIMEOUT_MS        = 60_000;
+
+/**
+ * Full multi-page crawl.
+ *
+ * Fetches the homepage with the full scraper, discovers same-origin internal
+ * links, then fetches up to (maxPages - 1) inner pages in parallel using the
+ * lightweight scraper.
+ *
+ * @param {string} url
+ * @param {{ maxPages?: number }} [opts]
+ * @returns {Promise<{ primary: object, pages: object[] }>}
+ */
+async function crawl(url, opts = {}) {
+  const maxPages = Math.max(
+    1,
+    parseInt(opts.maxPages ?? process.env.AUDIT_MAX_PAGES ?? CRAWL_MAX_PAGES_DEFAULT, 10) ||
+    CRAWL_MAX_PAGES_DEFAULT
+  );
+
+  // Always do the full homepage scrape first
+  const primary = await scrape(url);
+
+  // Bail early on scrape error or single-page mode
+  if (primary.error || maxPages <= 1) {
+    return { primary, pages: [] };
+  }
+
+  const baseUrl    = primary.final_url || url;
+  // Over-fetch candidates so we have fallbacks if some pages 404 or timeout
+  const candidates = discoverLinks(primary, baseUrl, (maxPages - 1) * 4);
+  const toFetch    = candidates.slice(0, maxPages - 1);
+
+  if (toFetch.length === 0) {
+    return { primary, pages: [] };
+  }
+
+  // Fetch inner pages in parallel; race the whole batch against an overall timeout
+  const crawlPromise = Promise.all(
+    toFetch.map(innerUrl => scrapePage(innerUrl))
+  ).then(results => results.filter(Boolean)); // filter out null (failed / timed-out pages)
+
+  const timeoutPromise = new Promise(resolve =>
+    setTimeout(() => resolve(null), CRAWL_TIMEOUT_MS)
+  );
+
+  const pages = await Promise.race([crawlPromise, timeoutPromise]) ?? [];
+
+  return { primary, pages };
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 
-module.exports = { scrape, fetchUrl, probeUrl };
+module.exports = { scrape, crawl, scrapePage, discoverLinks, fetchUrl, probeUrl };

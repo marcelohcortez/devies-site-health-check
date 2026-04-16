@@ -153,6 +153,21 @@ The `/api/audit` endpoint is expensive (it makes real HTTP requests per URL).
 
 ---
 
+### D-008 — Multi-page crawl depth and page selection
+
+When crawling inner pages, decisions needed on scope.
+
+**Options:**
+
+| Decision point | Choice | Notes |
+|----------------|--------|-------|
+| Max pages per audit | **5** (homepage + 4 inner) | Balances coverage vs latency; configurable via `AUDIT_MAX_PAGES` env var |
+| Page selection | **BFS from homepage links, same-origin only** | Skip external, skip query-string URLs, deduplicate by path |
+| Inner page scrape depth | **Lightweight (HTML + headers only, no probes)** | No security probes, no WP/Strapi probes, no robots/sitemap — ~2s/page instead of ~15s |
+| Crawl timeout | **60 s total** (10 s per inner page) | Overall timeout enforced in `crawl()` via `Promise.race` |
+
+---
+
 ## 3. Architecture
 
 ### 3.1 Monorepo layout
@@ -305,7 +320,7 @@ and stores it in the database alongside the submission. The operator can retriev
 it via API to generate a PDF offline (using `report_generator.py` or an AI).
 The user never sees the raw JSON.
 
-**audit_data.json shape** (mirrors `site-auditor` output):
+**audit_data.json shape** (mirrors `site-auditor` output, with `pages` addition):
 ```json
 {
   "url":           "https://example.com",
@@ -318,16 +333,30 @@ The user never sees the raw JSON.
   "performance":   { ... },
   "security":      { ... },
   "html":          { ... },
+  "pages": [
+    {
+      "url": "https://example.com/about",
+      "status_code": 200,
+      "response_time_ms": 312,
+      "seo": { "title": { "text": "About Us", "missing": false, ... }, ... },
+      "html": { "headings": { "h1": ["About Us"], "h2": [] }, "images": { "missing_alt": 2 }, ... },
+      "performance": { "page_size_bytes": 48000, ... },
+      "security": { "https": true, "mixed_content_count": 0 }
+    }
+  ],
   "interpretation": {
     "overall_score":   74,
     "summary":         "...",
     "category_scores": { ... },
     "findings":        [ ... ],
     "platform":        "wordpress",
-    "mode":            "rule"
+    "mode":            "rule",
+    "pages_crawled":   4
   }
 }
 ```
+
+> `pages[]` contains `LightScrapedData` for each inner page crawled (not the homepage — that data lives in the top-level `http`/`seo`/etc. fields as before). If no inner pages were crawled, `pages` is an empty array.
 
 **Acceptance criteria:**
 - [ ] `audit_data.json` is assembled synchronously during the audit (not fire-and-forget)
@@ -489,6 +518,75 @@ pastes the embed code; no settings page or shortcode is needed.
 
 ---
 
+### F-011 — Multi-page Crawl
+
+**Description:** Instead of auditing only the homepage, the engine crawls up to
+`AUDIT_MAX_PAGES` pages per site (default: 5). The homepage receives a full scrape
+(all 125 rules, all probes). Inner pages receive a lightweight scrape (HTML + HTTP
+headers only — no security probes, no WP/Strapi probes). A set of aggregate rules
+then reports cross-page issues such as "3 of 4 inner pages are missing a meta description".
+
+**Architecture overview:**
+
+```
+crawl(url, { maxPages })
+  ├── scrape(url)              → primary (FullScrapedData, all probes)
+  ├── discoverLinks(primary)   → up to 4 * maxPages candidate inner URLs
+  ├── scrapePage(url) × N      → pages[] (LightScrapedData, parallel, 10 s/page)
+  └── { primary, pages }       → passed to interpret()
+
+interpret({ primary, pages })
+  ├── Run all 125 rules on primary       → homepage findings
+  ├── Run aggregate rules on pages[]     → cross-page findings (new, ~10 rules)
+  └── { ..., pages_crawled: N }
+```
+
+**Crawl constraints:**
+- Same-origin links only (scheme + hostname must match the audited URL)
+- Skip URLs with query parameters (`?`) or fragments (`#`) to avoid parameter explosion
+- Deduplicate by normalised path (trailing-slash-insensitive)
+- Each inner page fetch: 10 s timeout, no retries
+- Overall crawl: 60 s hard timeout (uncrawled pages silently skipped)
+- `AUDIT_MAX_PAGES` env var overrides the default of 5; minimum 1 (homepage-only fallback)
+
+**Aggregate rules (applied to `pages[]`):**
+
+| Rule ID | Category | Fires when |
+|---------|----------|------------|
+| `multi_pages_missing_title` | SEO | > 0 inner pages have `seo.title.missing` |
+| `multi_pages_title_too_long` | SEO | > 0 inner pages have `seo.title.too_long` |
+| `multi_pages_missing_meta_desc` | SEO | > 0 inner pages have `seo.meta_description.missing` |
+| `multi_pages_no_h1` | SEO | > 0 inner pages have `html.headings.h1.length === 0` |
+| `multi_pages_missing_alt` | Accessibility | > 0 inner pages have `html.images.missing_alt > 0` |
+| `multi_pages_inputs_no_label` | Accessibility | > 0 inner pages have `html.forms.total_inputs_without_label > 0` |
+| `multi_pages_links_no_text` | Accessibility | > 0 inner pages have `html.links.empty_text_count > 0` |
+| `multi_pages_mixed_content` | Security | > 0 inner pages have `security.mixed_content_count > 0` |
+| `multi_pages_no_lang` | Accessibility | > 0 inner pages have `html.semantic.lang_attr === null` |
+| `multi_pages_duplicate_ids` | HTML_Structure | > 0 inner pages have `html.duplicate_ids_count > 0` |
+
+All aggregate rules include the affected page paths in their `finding` description
+(e.g. "Missing title on 2 pages: /about, /contact").
+
+**Backward compatibility:**
+- `interpret(scrapedData)` (single `FullScrapedData`) still works — no `pages` input = no aggregate rules, `pages_crawled: 1`
+- Existing 125 rules are unchanged
+- `audit_data.json` shape: `pages[]` array added alongside existing top-level fields (additive, no renames)
+- API response: `pages_crawled` count added to each result object
+
+**Acceptance criteria:**
+- [ ] `crawl(url, { maxPages: 5 })` returns `{ primary, pages }` where `primary` is a `FullScrapedData` and `pages` is `LightScrapedData[]`
+- [ ] Only same-origin, query-param-free, deduplicated paths are crawled
+- [ ] Inner page fetches run in parallel with a 10 s per-page timeout
+- [ ] Overall crawl completes within 60 s; pages not fetched in time are silently omitted
+- [ ] `interpret({ primary, pages })` fires all 125 homepage rules plus applicable aggregate rules
+- [ ] Aggregate rule findings include the list of affected page paths
+- [ ] `result.pages_crawled` equals `1 + pages.length`
+- [ ] If `pages` is empty (no crawlable inner links found), result is identical to single-page audit
+- [ ] `AUDIT_MAX_PAGES=1` disables crawling (homepage only)
+- [ ] API route uses `crawl()` instead of `scrape()` for all new audits
+
+---
+
 ## 5. API Specification
 
 ### `POST /api/audit`
@@ -531,7 +629,8 @@ pastes the embed code; no settings page or shortcode is needed.
           "weight":      10
         }
       ],
-      "platform": "wordpress"
+      "platform": "wordpress",
+      "pages_crawled": 4
     }
   ]
 }
@@ -654,11 +753,49 @@ independently.
 ### 7.1 Public API
 
 ```js
-import { scrape, interpret } from '@audit-web/audit-core';
+import { scrape, crawl, interpret } from '@audit-web/audit-core';
 
-const scrapedData  = await scrape('https://example.com');
-const result       = interpret(scrapedData);
-// result: { overall_score, summary, category_scores, findings, platform, mode }
+// Single-page (backward compatible, unchanged)
+const scrapedData = await scrape('https://example.com');
+const result      = interpret(scrapedData);
+
+// Multi-page (new — used by the API route)
+const siteData = await crawl('https://example.com', { maxPages: 5 });
+// siteData: { primary: FullScrapedData, pages: LightScrapedData[] }
+const result   = interpret(siteData);
+// result: { overall_score, summary, category_scores, findings, platform, mode, pages_crawled }
+```
+
+**`LightScrapedData` shape** (subset of `FullScrapedData`, collected for each inner page):
+
+```js
+{
+  url:             string,
+  status_code:     number,
+  response_time_ms:number,
+  seo: {
+    title:            { text: string, missing: boolean, too_short: boolean, too_long: boolean },
+    meta_description: { text: string | null, missing: boolean },
+    canonical:        string | null,
+    h1_count:         number,
+  },
+  html: {
+    headings:       { h1: string[], h2: string[] },
+    images:         { total: number, missing_alt: number, empty_alt: number },
+    links:          { internal_count: number, external_count: number, empty_text_count: number },
+    semantic:       { has_main: boolean, has_nav: boolean, lang_attr: string | null },
+    forms:          { total_inputs_without_label: number },
+    duplicate_ids_count: number,
+  },
+  performance: {
+    page_size_bytes: number,
+    render_blocking: { scripts_count: number, styles_count: number },
+  },
+  security: {
+    https:              boolean,
+    mixed_content_count:number,
+  },
+}
 ```
 
 ### 7.2 Rule interface (unchanged from site-auditor)
@@ -799,8 +936,10 @@ const result       = interpret(scrapedData);
 ### 9.1 Performance
 
 - [ ] Score report must render within 500 ms of receiving the API response
-- [ ] API must respond within [FILL: N seconds] per URL (set timeout accordingly)
-- [ ] Scraper must not follow more than [FILL: N] redirects per URL
+- [ ] API must respond within 60 s per URL (homepage ~15 s + up to 4 inner pages ~2–3 s each in parallel)
+- [ ] Scraper must not follow more than 5 redirects per URL (applies to both full and lightweight scrape)
+- [ ] Inner page fetches have a 10 s per-page timeout; uncrawled pages are silently omitted
+- [ ] Overall crawl has a 60 s hard timeout
 
 ### 9.2 Security
 
@@ -844,6 +983,7 @@ const result       = interpret(scrapedData);
 | `EMAIL_USER`            | No       | SMTP username                                                               |
 | `EMAIL_PASS`            | No       | SMTP password                                                               |
 | `EMAIL_FROM`            | No       | From address, e.g. `"Devies Audit <audit@devies.se>"`                       |
+| `AUDIT_MAX_PAGES`       | No       | Max pages crawled per URL (default 5, min 1). Set to 1 to disable crawling  |
 
 > No PDF-related env vars needed — PDF generation is done offline by the operator.
 > `SUBMISSIONS_API_KEY` is removed — access is now controlled by JWT (F-009).
@@ -876,7 +1016,7 @@ const result       = interpret(scrapedData);
 
 | # | Question | Status | Answer |
 |---|----------|--------|--------|
-| Q-1 | What is the expected max response time for an audit? | OPEN | [TODO] |
+| Q-1 | What is the expected max response time for an audit? | RESOLVED | Single-page: ~15 s. Multi-page (5 pages, parallel inner fetches): ~25–30 s. API timeout set to 60 s. |
 | Q-2 | Will the submissions endpoint ever be public-facing? | RESOLVED | No — JWT-protected operator-only endpoint (see F-009) |
 | Q-3 | Is a light-mode theme needed for v1? | RESOLVED | Yes — white background, black text, devies.se style (see §8.3) |
 | Q-4 | Should the user receive a copy of the report by email? | RESOLVED | Yes — score + summary email sent after every audit (see F-008) |
