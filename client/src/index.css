@@ -651,6 +651,33 @@ label {
   color:       var(--text);
 }
 
+/* Teaser card — category tab view (no description, no fix) */
+.finding-card--teaser {
+  background:  var(--bg);
+  border-left: 3px solid var(--border);
+}
+
+/* Teaser CTA block at bottom of issue summary panel */
+.teaser-cta {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             16px;
+  margin:          24px 24px 0;
+  padding:         20px 24px;
+  background:      var(--bg2);
+  border:          1px solid var(--border);
+  border-left:     3px solid var(--accent);
+  flex-wrap:       wrap;
+}
+
+.teaser-cta-text {
+  font-size: 14px;
+  color:     var(--muted);
+  flex:      1;
+  min-width: 0;
+}
+
 /* ─── CTA box ────────────────────────────────────────────────────────────── */
 .cta-box {
   display:         flex;

@@ -382,10 +382,11 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Category tab state resets to "Overview" when the site-selector tab changes (different URL selected)
   - Depends on: T-051 (ScoreReport), T-053 (theme)
 
-- [ ] **T-056** Paywall gate for findings
-  - `FindingsPanel` component already exists in `ScoreReport.jsx` (kept, not rendered)
-  - When paywall is ready: add a locked section below the CTA with a prompt to unlock findings
-  - On unlock: render `<FindingsPanel findings={result.findings} />`
+- [x] **T-056** Paywall gate for findings — **implemented as teaser summary**
+  - Category tabs use `IssueSummaryPanel`: shows finding titles only — no technical descriptions, no fix instructions
+  - `FindingsPanel` (full details) kept for admin `SubmissionsPage` only
+  - Teaser CTA at bottom of each category panel: "Get the full report → hello@devies.se"
+  - Future: replace CTA with a payment/unlock flow when ready
 
 - [x] **T-052** Migrate / adapt `App` root component (state machine)
   - States: `form` → `loading` → `results` (and back)

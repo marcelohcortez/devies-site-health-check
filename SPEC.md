@@ -320,9 +320,11 @@ and per-category detail views.
 - [ ] The category tab label is colour-coded by grade (green/yellow/orange/red) matching the bar colours
 - [ ] Clicking a category tab shows a **category detail view** for that category:
   - Category score circle (same SVG component, full-size) + grade
-  - All findings for that category, grouped by severity (Critical → Warning → Info → Positive)
-  - Each finding card shows: title, description, "Fix:" instruction
+  - All findings for that category grouped by severity (Critical → Warning → Info → Positive), rendered via `IssueSummaryPanel`
+  - Each finding card shows the **title only** — no technical description, no fix instructions (upsell gate)
+  - A teaser CTA below the list: "Want to understand what these issues mean and how to resolve them? → Get the full report" (mailto:hello@devies.se)
   - If no findings for the category: "No issues found in this category"
+  - **`FindingsPanel`** (full details: title + description + fix) is reserved for the admin `SubmissionsPage` only
 - [ ] Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern
 - [ ] Active tab has a visible active indicator (underline or background highlight)
 - [ ] Tab bar scrolls horizontally on narrow viewports (no wrapping)

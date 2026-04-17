@@ -89,10 +89,12 @@ function CategoryBar({ name, score }: { name: string; score: number }) {
   );
 }
 
-// ── Findings panel ────────────────────────────────────────────────────────────
+// ── Shared severity constants ─────────────────────────────────────────────────
 
 const SEV_ORDER  = ['critical', 'warning', 'info', 'positive'] as const;
 const SEV_LABELS: Record<string, string> = { critical: 'Critical', warning: 'Warning', info: 'Info', positive: 'Positive' };
+
+// ── Full findings panel (admin / SubmissionsPage only) ────────────────────────
 
 function FindingsPanel({ findings }: { findings: Finding[] }) {
   const grouped = SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
@@ -129,6 +131,49 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Issue summary panel (public category tabs — titles only, no fixes) ────────
+// Shows what issues exist without revealing technical details or solutions.
+
+function IssueSummaryPanel({ findings }: { findings: Finding[] }) {
+  const grouped = SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
+    const items = findings.filter(f => f.severity === sev);
+    if (items.length) acc[sev] = items;
+    return acc;
+  }, {});
+
+  if (Object.keys(grouped).length === 0) {
+    return <p className="no-findings">No issues found in this category — great work!</p>;
+  }
+
+  return (
+    <div className="findings-panel">
+      {Object.entries(grouped).map(([sev, items]) => (
+        <div key={sev} className="findings-section">
+          <div className="findings-section-title">
+            <span className={`sev-badge sev-${sev}`}>{SEV_LABELS[sev]}</span>
+            {items.length} issue{items.length !== 1 ? 's' : ''}
+          </div>
+
+          {items.map((f, i) => (
+            <div key={i} className="finding-card finding-card--teaser">
+              <div className="finding-title">{f.title}</div>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div className="teaser-cta">
+        <p className="teaser-cta-text">
+          Want to understand what these issues mean and how to resolve them?
+        </p>
+        <a className="cta-link" href="mailto:hello@devies.se">
+          Get the full report
+        </a>
+      </div>
     </div>
   );
 }
@@ -263,8 +308,8 @@ function SiteResultCard({ result }: { result: SiteResult }) {
             </div>
           </div>
 
-          {/* Findings for this category */}
-          <FindingsPanel
+          {/* Issue summary — titles only, no technical details or fixes */}
+          <IssueSummaryPanel
             findings={result.findings.filter(f => f.category === activeTab)}
           />
         </div>
