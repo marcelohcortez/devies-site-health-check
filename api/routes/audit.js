@@ -195,14 +195,18 @@ router.post('/audit', async (req, res) => {
         pages_crawled:   interpretation.pages_crawled,
       });
 
-      // ── Send result email — fail-silent ─────────────────────────────────
-      sendAuditResult({
-        to:             trimEmail,
-        url,
-        score:          interpretation.overall_score,
-        categoryScores: interpretation.category_scores,
-        summary:        interpretation.summary,
-      }).catch(err => console.error('[email] Failed to send audit result:', err.message));
+      // ── Send result email — await so serverless functions don't terminate early
+      try {
+        await sendAuditResult({
+          to:             trimEmail,
+          url,
+          score:          interpretation.overall_score,
+          categoryScores: interpretation.category_scores,
+          summary:        interpretation.summary,
+        });
+      } catch (err) {
+        console.error('[email] Failed to send audit result:', err.message);
+      }
     }
 
     return res.json({ success: true, results: responseResults });

@@ -918,34 +918,36 @@ const result   = interpret(siteData);
 
 ### 8.3 Design tokens
 
-> **Style direction:** Light theme inspired by devies.se — white background,
-> black/near-black body text, clean sans-serif typography, minimal decoration.
+> **Style direction:** Light theme inspired by [alexanderzakabluk-stack/wcag](https://github.com/alexanderzakabluk-stack/wcag) —
+> white background, near-black body text, Inter sans-serif typography, teal interactive accent,
+> uppercase labels with generous letter-spacing, sharp square corners throughout.
 > Dark mode is out of scope for v1.
 
-| Token           | Value     | Notes                                        |
-|-----------------|-----------|----------------------------------------------|
-| `--bg`          | `#ffffff`  | Page background                             |
-| `--bg2`         | `#f5f5f5`  | Card / section background                   |
-| `--bg3`         | `#eeeeee`  | Input background                            |
-| `--border`      | `#e0e0e0`  | Border colour                               |
-| `--text`        | `#111111`  | Primary text                                |
-| `--muted`       | `#666666`  | Secondary / helper text                     |
-| `--accent`      | `#111111`  | Buttons, active states (black on white)     |
-| `--accent-hover`| `#333333`  | Button hover state                          |
-| Grade A         | `#2e7d32`  | Dark green (readable on white)              |
+| Token           | Value      | Notes                                        |
+|-----------------|------------|----------------------------------------------|
+| `--bg`          | `#ffffff`  | Page background                              |
+| `--bg2`         | `#f1f2f2`  | Card / section background                    |
+| `--bg3`         | `#e6e6e6`  | Chip / badge background                      |
+| `--border`      | `#e0e0e0`  | Border colour                                |
+| `--text`        | `#0d0c11`  | Primary text                                 |
+| `--muted`       | `#4d4d4d`  | Secondary / helper text                      |
+| `--accent`      | `#007396`  | Teal — buttons hover, active tabs, focus ring |
+| `--accent-h`    | `#005a73`  | Darker teal for deeper hover states          |
+| Grade A         | `#2e7d32`  | Dark green                                   |
 | Grade B         | `#558b2f`  |                                              |
-| Grade C         | `#f9a825`  |                                              |
+| Grade C         | `#c17f00`  | Dark amber (readable on white)               |
 | Grade D         | `#e65100`  |                                              |
 | Grade F         | `#c62828`  |                                              |
 
 **Typography:**
-- Font family: system-ui, -apple-system, "Segoe UI", sans-serif
+- Font family: Inter (Google Fonts), system-ui, -apple-system, "Segoe UI", sans-serif
 - Body: 16 px / 1.5 line-height
-- Headings: bold, tight letter-spacing
+- Labels: 10 px, 700 weight, uppercase, letter-spacing 0.16 em
 
 **Buttons:**
-- Primary: black background, white text, no border-radius (square corners, devies.se style)
-- Secondary: white background, black border, black text
+- Primary: near-black background (#0d0c11), white text, 2px solid border, uppercase, letter-spacing 0.18 em — hover transitions to teal accent
+- Secondary: white background, 2px solid black border — hover transitions to teal
+- No border-radius on any interactive element (square corners throughout)
 
 ### 8.4 iframe compatibility requirements
 

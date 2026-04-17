@@ -305,6 +305,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Applied in `api/services/email.js`: `url` and `summary` HTML-escaped in `buildHtml`
 
 - [x] **T-047** Email notification after audit (F-008) — **Priority: HIGH**
+  - **T-047b** Fix: `sendAuditResult` was fire-and-forget; changed to `await` so serverless functions don't terminate before email sends (2026-04-17)
   - Install `nodemailer` in `api/package.json`
   - Create `api/services/email.js` — SMTP transport configured from env vars
   - `sendAuditResult(to, url, score, grade, categorySores, summary)` function
@@ -365,7 +366,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Shows overall score circle, category bars only — findings tab is hidden (paywall, see T-056)
   - CTA block at the bottom: "Need help improving your website health?" → mailto:hello@devies.se
 
-- [x] **T-057** Add category tab bar to ScoreReport (F-004 update) — **Priority: HIGH**
+- [x] **T-057** Add category tab bar to ScoreReport (F-004 update) — **Priority: HIGH** ✓ Done
   - Replace the current "categories grid + CTA" block inside `SiteResultCard` with a two-level tab system
   - First tab: **"Overview"** (default) — renders existing `CategoryBars` grid + CTA block (no change to this view)
   - Remaining tabs: one per active category key in `result.category_scores` (e.g. "SEO · 82", "Security · 65")
@@ -407,6 +408,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Depends on: T-044, T-044b, T-049b
 
 - [x] **T-053** Apply light theme per §8.3 — **Priority: HIGH**
+  - **T-053b** Visual refresh to match wcag repo style: Inter font, teal accent `#007396`, stronger input borders (1px solid `--text`), uppercase buttons with 2px border + letter-spacing, hover → teal transition, card lift effect on findings (2026-04-17)
   - Update `index.css` with new design tokens (white bg, black text, square buttons)
   - Remove all dark-theme token values
   - Typography: system-ui font stack, 16 px body
