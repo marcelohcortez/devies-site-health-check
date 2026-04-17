@@ -501,6 +501,22 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
+## Phase 8 — Development workflow
+
+- [x] **T-100** Define commit + CodeRabbit review workflow (SPEC §13)
+  - Rule: every code change → `/commit-review` → PR → CodeRabbit → fix issues → merge
+  - Skill created at `.claude/commands/commit-review.md`
+  - Requires `gh` CLI (`brew install gh`) + CodeRabbit GitHub App on repo
+
+- [ ] **T-101** Install CodeRabbit GitHub App on `marcelohcortez/devies-site-health-check`
+  - URL: https://github.com/apps/coderabbitai
+  - Once installed, all new PRs are auto-reviewed within ~1 min
+
+- [ ] **T-102** Add `.coderabbit.yaml` config to repo root (optional but recommended)
+  - Set language to `en`, enable early access features, configure path-based review instructions
+
+---
+
 ## Backlog / Nice-to-have (v2)
 
 - [-] ~~**T-090** Email submission confirmation~~ — **promoted to T-047 (v1)**
