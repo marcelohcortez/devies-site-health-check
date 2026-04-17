@@ -1128,4 +1128,39 @@ Expected: `vite binary present` (install `npm install` in client first if not).
 
 ---
 
+---
+
+## 13. Development Workflow
+
+> **Rule:** After every code change, create a commit and run CodeRabbit before reporting the task as done. Use the `/commit-review` skill.
+
+### 13.1 Commit & review steps (enforced)
+
+1. Make code changes.
+2. Run the mandatory local checks from §12.1 that apply.
+3. Invoke `/commit-review` — this skill:
+   - Creates a feature branch (if on `main`).
+   - Stages and commits the changes with a descriptive message.
+   - Pushes the branch and opens a PR on `marcelohcortez/devies-site-health-check`.
+   - Posts `@coderabbitai review` in the PR body to trigger an automated code review.
+4. Wait for CodeRabbit to post its review (typically < 1 min after PR is created).
+5. Address any issues raised by CodeRabbit before merging to `main`.
+
+### 13.2 CodeRabbit setup
+
+- GitHub App: install from `https://github.com/apps/coderabbitai` if not already on the repo.
+- Configuration file: `.coderabbit.yaml` (optional) — add at repo root to customise review rules.
+- Manual trigger: comment `@coderabbitai review` on any PR to re-run the review.
+
+### 13.3 Skill location
+
+The `/commit-review` skill is defined at:
+```
+/Users/marcelohenriquescortez/Work/Audit/.claude/commands/commit-review.md
+```
+
+It is a project-level Claude Code slash command — invoke it with `/commit-review`.
+
+---
+
 *End of spec. Update this document as decisions are made — it is the source of truth.*
