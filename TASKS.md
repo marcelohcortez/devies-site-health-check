@@ -376,7 +376,7 @@ These are not implementation tasks. They require you to update SPEC.md.
     - `<FindingsPanel findings={result.findings.filter(f => f.category === cat)} />`
     - Empty state "No issues found in this category" when no findings for that category
   - Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA
-  - Tab bar overflows horizontally on narrow viewports (`overflow-x: auto; white-space: nowrap`)
+  - Tab bar wraps to multiple rows on narrow viewports (`flex-wrap: wrap`) — no horizontal scroll
   - Active tab style: underline or fill matching the grade colour
   - Remove the `void FindingsPanel;` dead-code stub — `FindingsPanel` is now used
   - Category tab state resets to "Overview" when the site-selector tab changes (different URL selected)
