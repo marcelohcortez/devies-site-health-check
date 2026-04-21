@@ -119,6 +119,11 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
           {items.map((f, i) => (
             <div key={i} className="finding-card">
               <div className="finding-title">{f.title}</div>
+              {f.page_url && (
+                <div className="finding-page">
+                  {(() => { try { return new URL(f.page_url).pathname || '/'; } catch { return f.page_url; } })()}
+                </div>
+              )}
               {(f.finding || f.description) && (
                 <div className="finding-desc">{f.finding ?? f.description}</div>
               )}
@@ -161,6 +166,11 @@ function IssueSummaryPanel({ findings }: { findings: Finding[] }) {
           {items.map((f, i) => (
             <div key={i} className="finding-card finding-card--teaser">
               <div className="finding-title">{f.title}</div>
+              {f.page_url && (
+                <div className="finding-page">
+                  {(() => { try { return new URL(f.page_url).pathname || '/'; } catch { return f.page_url; } })()}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -245,6 +255,11 @@ function SiteResultCard({ result }: { result: SiteResult }) {
           <p className="result-summary">{result.summary}</p>
           <p className="result-platform">
             Platform: <strong>{result.platform || 'unknown'}</strong>
+            {result.pages_crawled != null && (
+              <span className="pages-crawled-badge" style={{ marginLeft: 10 }}>
+                {result.pages_crawled} page{result.pages_crawled !== 1 ? 's' : ''} scanned
+              </span>
+            )}
             {criticalCount > 0 && (
               <span className="sev-badge sev-critical" style={{ marginLeft: 10 }}>
                 {criticalCount} critical

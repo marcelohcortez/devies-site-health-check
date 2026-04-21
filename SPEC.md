@@ -155,16 +155,13 @@ The `/api/audit` endpoint is expensive (it makes real HTTP requests per URL).
 
 ### D-008 — Multi-page crawl depth and page selection
 
-When crawling inner pages, decisions needed on scope.
-
-**Options:**
-
 | Decision point | Choice | Notes |
 |----------------|--------|-------|
-| Max pages per audit | **5** (homepage + 4 inner) | Balances coverage vs latency; configurable via `AUDIT_MAX_PAGES` env var |
-| Page selection | **BFS from homepage links, same-origin only** | Skip external, skip query-string URLs, deduplicate by path |
-| Inner page scrape depth | **Lightweight (HTML + headers only, no probes)** | No security probes, no WP/Strapi probes, no robots/sitemap — ~2s/page instead of ~15s |
-| Crawl timeout | **60 s total** (10 s per inner page) | Overall timeout enforced in `crawl()` via `Promise.race` |
+| Pages per audit | **All same-origin links from homepage, up to 50 inner pages** | Crawls every link in menu, footer, and body — no artificial page cap; 50-page hard ceiling prevents runaway crawls on large sites |
+| Page selection | **Same-origin only, no query strings, no fragments** | Skip external links, WP-admin/feed/tag/category paths, static assets; deduplicate by normalised path |
+| Inner page scrape depth | **Lightweight (HTML + headers only, no probes)** | No security probes, no WP/Strapi probes, no robots/sitemap — ~2 s/page instead of ~15 s |
+| Crawl timeout | **90 s total** (10 s per inner page) | All inner pages fetched in parallel; overall timeout via `Promise.race` in `crawl()` |
+| Link pool size | **100** internal links stored from homepage (`INTERNAL_LINKS_MAX`) | Separate from `LINK_CHECK_LIMIT` (30) used for broken-link HEAD probes only |
 
 ---
 
@@ -278,7 +275,8 @@ more website URLs before starting the audit.
 - [ ] `overall_score` is 0–100
 - [ ] `category_scores` contains exactly the active categories for the detected platform
 - [ ] `findings` array contains at least one item for any non-perfect score
-- [ ] Each finding has: `title`, `severity`, `finding` (description), `how_to_fix`, `category`
+- [ ] Each finding has: `title`, `severity`, `finding` (description), `how_to_fix`, `category`, `page_url`
+- [ ] `page_url` is the URL of the specific page where the issue was found (homepage URL for homepage rules; `null` for multipage aggregate rules where affected paths are already listed in the `finding` text)
 
 ---
 
@@ -327,7 +325,9 @@ and per-category detail views.
   - **`FindingsPanel`** (full details: title + description + fix) is reserved for the admin `SubmissionsPage` only
 - [ ] Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern
 - [ ] Active tab has a visible active indicator (underline or background highlight)
-- [ ] Tab bar scrolls horizontally on narrow viewports (no wrapping)
+- [ ] Tab bar wraps to multiple rows on narrow viewports (no horizontal scroll)
+- [ ] Score report hero shows a `pages scanned` badge (e.g. "5 pages scanned") alongside the platform and severity counts — confirms that inner pages were crawled
+- [ ] Each finding card shows the page path where the issue was found (e.g. `/about`) when `page_url` is present; multipage aggregate findings omit the badge (paths are already in the finding text)
 
 ---
 

@@ -175,6 +175,7 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
       how_to_fix: rule.how_to_fix,
       impact:     rule.impact,
       reference:  rule.reference || '',
+      page_url:   scrapedData.final_url || scrapedData.url || null,
     });
 
     if (rule.severity !== 'positive' && rule.weight > 0) {
@@ -210,6 +211,7 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
         how_to_fix: rule.how_to_fix,
         impact:     rule.impact,
         reference:  rule.reference || '',
+        page_url:   null, // multipage findings span multiple pages — paths are in the finding text
       });
 
       if (rule.severity !== 'positive' && rule.weight > 0) {

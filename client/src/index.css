@@ -465,6 +465,14 @@ label {
   color:     var(--muted);
 }
 
+.pages-crawled-badge {
+  font-size:   11px;
+  font-weight: 600;
+  color:       var(--accent);
+  background:  rgba(0, 115, 150, 0.08);
+  padding:     2px 7px;
+}
+
 /* Category tab bar */
 .result-tabs {
   display:     flex;
@@ -631,6 +639,15 @@ label {
   font-size:     14px;
   font-weight:   600;
   margin-bottom: 4px;
+}
+
+.finding-page {
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--accent);
+  letter-spacing: 0.03em;
+  margin-bottom:  4px;
+  font-family:    monospace, monospace;
 }
 
 .finding-desc {

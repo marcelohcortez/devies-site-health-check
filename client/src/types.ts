@@ -5,6 +5,8 @@ export interface Finding {
   finding?:    string;
   description?: string;
   how_to_fix?: string;
+  /** URL of the specific page where this finding was detected. Null for multipage aggregate rules (paths are in the finding text). */
+  page_url?:   string | null;
 }
 
 export interface SiteResult {
@@ -14,6 +16,7 @@ export interface SiteResult {
   platform: string;
   category_scores: Record<string, number>;
   findings: Finding[];
+  pages_crawled?: number;
 }
 
 export interface SiteResultError {
