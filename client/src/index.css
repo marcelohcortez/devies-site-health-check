@@ -465,15 +465,20 @@ label {
   color:     var(--muted);
 }
 
+.pages-crawled-badge {
+  font-size:   11px;
+  font-weight: 600;
+  color:       var(--accent);
+  background:  rgba(0, 115, 150, 0.08);
+  padding:     2px 7px;
+}
+
 /* Category tab bar */
 .result-tabs {
-  display:                  flex;
-  border-bottom:            1px solid var(--border);
-  overflow-x:               auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width:          none;
+  display:     flex;
+  flex-wrap:   wrap;
+  border-bottom: 1px solid var(--border);
 }
-.result-tabs::-webkit-scrollbar { display: none; }
 
 .result-tab-btn {
   display:        flex;
@@ -634,6 +639,48 @@ label {
   font-size:     14px;
   font-weight:   600;
   margin-bottom: 4px;
+}
+
+/* Legacy — used by admin FindingsPanel */
+.finding-page {
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--accent);
+  letter-spacing: 0.03em;
+  margin-bottom:  4px;
+  font-family:    monospace, monospace;
+}
+
+/* Public teaser — page location pill */
+.finding-page-pill {
+  display:        inline-flex;
+  align-items:    center;
+  gap:            4px;
+  margin-top:     4px;
+  padding:        2px 8px;
+  border-radius:  100px;
+  background:     rgba(0, 115, 150, 0.08);
+  border:         1px solid rgba(0, 115, 150, 0.2);
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--accent);
+  font-family:    monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Locked "N more" row */
+.teaser-hidden-row {
+  display:       flex;
+  align-items:   center;
+  gap:           6px;
+  padding:       8px 12px;
+  margin:        4px 0;
+  border-radius: 6px;
+  background:    var(--surface);
+  font-size:     12px;
+  color:         var(--muted);
+  font-style:    italic;
+  border:        1px dashed var(--border);
 }
 
 .finding-desc {

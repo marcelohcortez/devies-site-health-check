@@ -155,16 +155,13 @@ The `/api/audit` endpoint is expensive (it makes real HTTP requests per URL).
 
 ### D-008 — Multi-page crawl depth and page selection
 
-When crawling inner pages, decisions needed on scope.
-
-**Options:**
-
 | Decision point | Choice | Notes |
 |----------------|--------|-------|
-| Max pages per audit | **5** (homepage + 4 inner) | Balances coverage vs latency; configurable via `AUDIT_MAX_PAGES` env var |
-| Page selection | **BFS from homepage links, same-origin only** | Skip external, skip query-string URLs, deduplicate by path |
-| Inner page scrape depth | **Lightweight (HTML + headers only, no probes)** | No security probes, no WP/Strapi probes, no robots/sitemap — ~2s/page instead of ~15s |
-| Crawl timeout | **60 s total** (10 s per inner page) | Overall timeout enforced in `crawl()` via `Promise.race` |
+| Pages per audit | **All same-origin links from homepage, up to 50 inner pages** | Crawls every link in menu, footer, and body — no artificial page cap; 50-page hard ceiling prevents runaway crawls on large sites |
+| Page selection | **Same-origin only, no query strings, no fragments** | Skip external links, WP-admin/feed/tag/category paths, static assets; deduplicate by normalised path |
+| Inner page scrape depth | **Lightweight (HTML + headers only, no probes)** | No security probes, no WP/Strapi probes, no robots/sitemap — ~2 s/page instead of ~15 s |
+| Crawl timeout | **90 s total** (10 s per inner page) | All inner pages fetched in parallel; overall timeout via `Promise.race` in `crawl()` |
+| Link pool size | **100** internal links stored from homepage (`INTERNAL_LINKS_MAX`) | Separate from `LINK_CHECK_LIMIT` (30) used for broken-link HEAD probes only |
 
 ---
 
@@ -192,7 +189,7 @@ audit-web/                          ← workspace root
 │       │   │   ├── seo.js          ← 19 rules
 │       │   │   ├── security.js     ← 17 rules
 │       │   │   ├── performance.js  ← 12 rules
-│       │   │   ├── accessibility.js← 18 rules
+│       │   │   ├── accessibility.js← 28 rules
 │       │   │   ├── html.js         ←  9 rules
 │       │   │   ├── wordpress.js    ← 23 rules
 │       │   │   └── strapi.js       ← 27 rules
@@ -278,7 +275,8 @@ more website URLs before starting the audit.
 - [ ] `overall_score` is 0–100
 - [ ] `category_scores` contains exactly the active categories for the detected platform
 - [ ] `findings` array contains at least one item for any non-perfect score
-- [ ] Each finding has: `title`, `severity`, `finding` (description), `how_to_fix`, `category`
+- [ ] Each finding has: `title`, `severity`, `finding` (description), `how_to_fix`, `category`, `page_url`
+- [ ] `page_url` is the URL of the specific page where the issue was found (homepage URL for homepage rules; `null` for multipage aggregate rules where affected paths are already listed in the `finding` text)
 
 ---
 
@@ -320,14 +318,19 @@ and per-category detail views.
 - [ ] The category tab label is colour-coded by grade (green/yellow/orange/red) matching the bar colours
 - [ ] Clicking a category tab shows a **category detail view** for that category:
   - Category score circle (same SVG component, full-size) + grade
-  - All findings for that category grouped by severity (Critical → Warning → Info → Positive), rendered via `IssueSummaryPanel`
-  - Each finding card shows the **title only** — no technical description, no fix instructions (upsell gate)
+  - Findings grouped by severity (Critical → Warning → Info), rendered via `IssueSummaryPanel` (positive findings excluded from teaser)
+  - Each finding card in `IssueSummaryPanel` shows:
+    - The finding **title** (informs user of issue existence without a step-by-step fix)
+    - A teal **page location pill** — shows `/path` for issues on a specific inner page (non-root); shows "N pages" for multipage aggregate findings; omitted for homepage-only findings (path `/`)
+  - **Cap**: maximum 2 findings shown per severity tier; excess shown as a dashed-border locked row: "N more issues — get the full report to see all details"
   - A teaser CTA below the list: "Want to understand what these issues mean and how to resolve them? → Get the full report" (mailto:hello@devies.se)
   - If no findings for the category: "No issues found in this category"
   - **`FindingsPanel`** (full details: title + description + fix) is reserved for the admin `SubmissionsPage` only
 - [ ] Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA pattern
 - [ ] Active tab has a visible active indicator (underline or background highlight)
-- [ ] Tab bar scrolls horizontally on narrow viewports (no wrapping)
+- [ ] Tab bar wraps to multiple rows on narrow viewports (no horizontal scroll)
+- [ ] Score report hero shows a `pages scanned` badge (e.g. "5 pages scanned") alongside the platform and severity counts — confirms that inner pages were crawled
+- [ ] `Finding` object carries `page_url` (homepage URL for BASE_RULES; null for multipage) and `pages_count` (integer, multipage only — count of affected inner pages)
 
 ---
 
@@ -867,13 +870,13 @@ const result   = interpret(siteData);
 | `rules/seo.js`         | SEO             | 19    |
 | `rules/security.js`    | Security        | 17    |
 | `rules/performance.js` | Performance     | 12    |
-| `rules/accessibility.js`| Accessibility  | 18    |
+| `rules/accessibility.js`| Accessibility  | 28    |
 | `rules/html.js`        | HTML_Structure  |  9    |
 | `rules/wordpress.js`   | WordPress + WooCommerce | 23 |
 | `rules/strapi.js`      | Strapi          | 27    |
 | `rules/geo.js`         | AI_Readiness    | 15    |
 | `rules/multipage.js`   | multi-category  | 10    |
-| **Total**          |                 | **150** |
+| **Total**          |                 | **160** |
 
 > GEO rules (`rules/geo.js`) are always active — no flag required. They fire on
 > every audit and contribute to the `AI_Readiness` category (15% base weight).
@@ -1150,9 +1153,13 @@ Expected: `vite binary present` (install `npm install` in client first if not).
 
 ### 13.2 CodeRabbit setup
 
-- GitHub App: install from `https://github.com/apps/coderabbitai` if not already on the repo.
+- **GitHub App must be installed on the repo** for automated reviews to work.
+  Install from: `https://github.com/apps/coderabbitai` — click "Configure" → select `marcelohcortez/devies-site-health-check`.
 - Configuration file: `.coderabbit.yaml` (optional) — add at repo root to customise review rules.
 - Manual trigger: comment `@coderabbitai review` on any PR to re-run the review.
+- If CodeRabbit is not installed, `/commit-review` performs a self-review of the diff instead and commits any fixes found before pushing.
+
+> **Status (2026-04-22):** CodeRabbit GitHub App is NOT yet installed on `marcelohcortez/devies-site-health-check`. Install it before the next PR cycle to enable automated reviews.
 
 ### 13.3 Skill location
 

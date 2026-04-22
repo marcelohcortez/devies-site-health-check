@@ -67,8 +67,9 @@ function isPrivateUrl(urlString) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function runAudit(url) {
-  // crawl() fetches the homepage (full scrape) + up to AUDIT_MAX_PAGES-1 inner
-  // pages (lightweight). Returns { primary, pages }.
+  // crawl() fetches the homepage (full scrape) + all same-origin internal links
+  // discovered in the homepage HTML (menu, footer, body), up to 50 inner pages.
+  // Returns { primary, pages }.
   const siteData = await crawl(url);
 
   // crawl() surfaces the homepage error via siteData.primary.error

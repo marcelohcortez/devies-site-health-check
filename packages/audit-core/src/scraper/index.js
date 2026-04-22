@@ -26,7 +26,8 @@ const cheerio = require('cheerio');
 
 const FETCH_TIMEOUT_MS   = 15000;
 const MAX_BODY_BYTES     = 300_000;  // 300 KB — enough for thorough analysis
-const LINK_CHECK_LIMIT   = 30;       // max internal links to check for broken status
+const LINK_CHECK_LIMIT   = 30;       // max internal links to HEAD-probe for broken status
+const INTERNAL_LINKS_MAX = 100;      // max internal links stored for crawl discovery
 const EXPOSED_PATHS      = [
   '/.env', '/.git/config', '/wp-config.php', '/phpinfo.php',
   '/config.php', '/.htpasswd', '/backup.sql', '/dump.sql',
@@ -517,6 +518,79 @@ function analyseHtmlStructure($, baseUrl) {
   // Author meta tag
   const authorMeta = $('meta[name="author"]').attr('content') || null;
 
+  // ── Viewport zoom lock (WCAG 1.4.4 / EN 301 549) ──
+  const viewportContent = $('meta[name="viewport"]').attr('content') || '';
+  const viewportBlocksZoom = /user-scalable\s*=\s*(no|0)\b/i.test(viewportContent) ||
+    /maximum-scale\s*=\s*1(?:\.0+)?(?:\s*[,;]|\s*$)/i.test(viewportContent);
+
+  // ── Meta refresh redirect (WCAG 2.2.1) ──
+  let metaRefreshRedirect = false;
+  $('meta[http-equiv="refresh"]').each((_, el) => {
+    const content = $(el).attr('content') || '';
+    const m = content.match(/^\s*(\d+)/);
+    if (m && parseInt(m[1], 10) > 0) metaRefreshRedirect = true;
+  });
+
+  // ── Accessibility overlay detection (ADA Title III) ──
+  const OVERLAY_DOMAINS = [
+    'accessibe.com', 'userway.org', 'audioeye.com', 'equalweb.com',
+    'reciteme.com', 'maxaccess.io', 'accessiway.com', 'assistivlabs.com',
+    'widget.skiplang.com',
+  ];
+  let usesAccessibilityOverlay = false;
+  let overlayVendor = null;
+  $('script[src]').each((_, el) => {
+    const src = $(el).attr('src') || '';
+    for (const domain of OVERLAY_DOMAINS) {
+      if (src.includes(domain)) {
+        usesAccessibilityOverlay = true;
+        overlayVendor = domain;
+        return false; // break
+      }
+    }
+  });
+
+  // ── CAPTCHA detection (WCAG 2.2 SC 3.3.8 / EAA) ──
+  const captchaDetected =
+    $('script[src*="google.com/recaptcha"], script[src*="hcaptcha.com"], script[src*="turnstile.cloudflare.com"]').length > 0 ||
+    $('.g-recaptcha, .h-captcha').length > 0;
+
+  // ── Tables without header markup (WCAG 1.3.1) ──
+  let tablesWithoutHeaders = 0;
+  $('table').each((_, el) => {
+    const hasHeaders = $(el).find('th').length > 0 ||
+      $(el).find('[scope]').length > 0 ||
+      $(el).find('caption').length > 0;
+    if (!hasHeaders) tablesWithoutHeaders++;
+  });
+
+  // ── Language of parts — child lang attributes (WCAG 3.1.2) ──
+  const childLangAttrsCount = $('[lang]').not('html').length;
+
+  // ── Accessibility statement link (EAA / EU WAD) ──
+  let accessibilityStatementLink = false;
+  $('a[href]').each((_, el) => {
+    const href = ($(el).attr('href') || '').toLowerCase();
+    const text = $(el).text().trim().toLowerCase();
+    if (/accessi(bility)?[-_]?stat(ement)?/.test(href) ||
+        /\/accessibility/.test(href) ||
+        /accessibility/.test(text)) {
+      accessibilityStatementLink = true;
+      return false; // break
+    }
+  });
+
+  // ── PDF / document links (EN 301 549 Clause 10) ──
+  const DOC_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+  const nonHtmlDocumentLinks = [];
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const hrefLower = href.toLowerCase();
+    if (DOC_EXTS.some(ext => hrefLower.endsWith(ext) || hrefLower.includes(ext + '?'))) {
+      nonHtmlDocumentLinks.push(href);
+    }
+  });
+
   return {
     headings,
     heading_issues: headingIssues,
@@ -532,11 +606,13 @@ function analyseHtmlStructure($, baseUrl) {
       images_list:        images.slice(0, 20),  // first 20 for reference
     },
     links: {
-      internal_count:   internalLinks.length,
-      external_count:   externalLinks.length,
-      internal_sample:  [...new Set(internalLinks)].slice(0, LINK_CHECK_LIMIT),
-      external_sample:  [...new Set(externalLinks)].slice(0, 10),
-      empty_text_count: emptyTextLinks,
+      internal_count:          internalLinks.length,
+      external_count:          externalLinks.length,
+      internal_sample:         [...new Set(internalLinks)].slice(0, INTERNAL_LINKS_MAX),
+      external_sample:         [...new Set(externalLinks)].slice(0, 10),
+      empty_text_count:        emptyTextLinks,
+      pdf_links_count:         nonHtmlDocumentLinks.length,
+      non_html_document_links: nonHtmlDocumentLinks.slice(0, 20),
     },
     forms: {
       count:       forms.length,
@@ -545,16 +621,24 @@ function analyseHtmlStructure($, baseUrl) {
     },
     semantic: {
       ...semantic,
-      has_skip_link: hasSkipLink,
+      has_skip_link:              hasSkipLink,
+      viewport_blocks_zoom:       viewportBlocksZoom,
+      accessibility_statement_link: accessibilityStatementLink,
+      child_lang_attrs_count:     childLangAttrsCount,
     },
-    aria_issues:              ariaIssues,
-    iframes_without_title:    iframesWithoutTitle,
-    duplicate_ids_count:      duplicateIds,
-    video_without_captions:   videoWithoutCaptions,
+    aria_issues:                ariaIssues,
+    iframes_without_title:      iframesWithoutTitle,
+    duplicate_ids_count:        duplicateIds,
+    video_without_captions:     videoWithoutCaptions,
     audio_autoplay_no_controls: audioAutoplayNoControls,
-    lists_count:              listsCount,
-    tables_count:             tablesCount,
-    author_meta:              authorMeta,
+    meta_refresh_redirect:      metaRefreshRedirect,
+    uses_accessibility_overlay: usesAccessibilityOverlay,
+    overlay_vendor:             overlayVendor,
+    captcha_detected:           captchaDetected,
+    tables_without_headers:     tablesWithoutHeaders,
+    lists_count:                listsCount,
+    tables_count:               tablesCount,
+    author_meta:                authorMeta,
   };
 }
 
@@ -1129,14 +1213,14 @@ async function scrape(url) {
 
 /**
  * Extract crawlable internal links from the homepage scrape result.
- * Returns unique, normalised same-origin absolute URLs, sorted in insertion order.
+ * Returns all unique, normalised same-origin absolute URLs (no artificial cap —
+ * the caller decides how many to fetch).
  *
  * @param {object} primary  - FullScrapedData from scrape()
  * @param {string} baseUrl  - canonical base URL (used to resolve relative refs)
- * @param {number} [limit]  - max candidates to return (default: 20)
  * @returns {string[]}
  */
-function discoverLinks(primary, baseUrl, limit = 20) {
+function discoverLinks(primary, baseUrl) {
   let parsed;
   try { parsed = new URL(baseUrl); } catch { return []; }
 
@@ -1173,7 +1257,6 @@ function discoverLinks(primary, baseUrl, limit = 20) {
     if (/\/(wp-admin|wp-login|wp-cron|xmlrpc|feed|trackback|tag\/|category\/|author\/|page\/\d)/.test(lc)) continue;
 
     candidates.push(normUrl);
-    if (candidates.length >= limit) break;
   }
 
   return candidates;
@@ -1331,48 +1414,42 @@ async function scrapePage(url) {
 
 // ─── MULTI-PAGE CRAWL ─────────────────────────────────────────────────────────
 
-const CRAWL_MAX_PAGES_DEFAULT = 5;
-const CRAWL_TIMEOUT_MS        = 60_000;
+// Hard safety ceiling — prevents runaway crawls on sites with hundreds of links.
+// All same-origin links discovered on the homepage are crawled up to this limit.
+const MAX_INNER_PAGES  = 50;
+const CRAWL_TIMEOUT_MS = 90_000;
 
 /**
  * Full multi-page crawl.
  *
- * Fetches the homepage with the full scraper, discovers same-origin internal
- * links, then fetches up to (maxPages - 1) inner pages in parallel using the
- * lightweight scraper.
+ * Fetches the homepage with the full scraper, discovers ALL same-origin internal
+ * links (menu, footer, body — everything), then fetches them in parallel using
+ * the lightweight scraper. Up to MAX_INNER_PAGES (50) inner pages are fetched.
  *
  * @param {string} url
- * @param {{ maxPages?: number }} [opts]
  * @returns {Promise<{ primary: object, pages: object[] }>}
  */
-async function crawl(url, opts = {}) {
-  const maxPages = Math.max(
-    1,
-    parseInt(opts.maxPages ?? process.env.AUDIT_MAX_PAGES ?? CRAWL_MAX_PAGES_DEFAULT, 10) ||
-    CRAWL_MAX_PAGES_DEFAULT
-  );
-
+async function crawl(url) {
   // Always do the full homepage scrape first
   const primary = await scrape(url);
 
-  // Bail early on scrape error or single-page mode
-  if (primary.error || maxPages <= 1) {
+  if (primary.error) {
     return { primary, pages: [] };
   }
 
   const baseUrl    = primary.final_url || url;
-  // Over-fetch candidates so we have fallbacks if some pages 404 or timeout
-  const candidates = discoverLinks(primary, baseUrl, (maxPages - 1) * 4);
-  const toFetch    = candidates.slice(0, maxPages - 1);
+  const candidates = discoverLinks(primary, baseUrl);
+  const toFetch    = candidates.slice(0, MAX_INNER_PAGES);
 
   if (toFetch.length === 0) {
     return { primary, pages: [] };
   }
 
-  // Fetch inner pages in parallel; race the whole batch against an overall timeout
+  // Fetch all inner pages in parallel (each has its own 10 s per-page timeout).
+  // Race the whole batch against CRAWL_TIMEOUT_MS so a slow site can't stall forever.
   const crawlPromise = Promise.all(
     toFetch.map(innerUrl => scrapePage(innerUrl))
-  ).then(results => results.filter(Boolean)); // filter out null (failed / timed-out pages)
+  ).then(results => results.filter(Boolean)); // drop null (failed / timed-out pages)
 
   const timeoutPromise = new Promise(resolve =>
     setTimeout(() => resolve(null), CRAWL_TIMEOUT_MS)

@@ -367,6 +367,7 @@ These are not implementation tasks. They require you to update SPEC.md.
   - CTA block at the bottom: "Need help improving your website health?" → mailto:hello@devies.se
 
 - [x] **T-057** Add category tab bar to ScoreReport (F-004 update) — **Priority: HIGH** ✓ Done
+- [x] **T-057c** Tab bar wraps instead of scrolling — wraps to next row on narrow viewports (`flex-wrap: wrap`); no horizontal scroll (2026-04-21)
   - Replace the current "categories grid + CTA" block inside `SiteResultCard` with a two-level tab system
   - First tab: **"Overview"** (default) — renders existing `CategoryBars` grid + CTA block (no change to this view)
   - Remaining tabs: one per active category key in `result.category_scores` (e.g. "SEO · 82", "Security · 65")
@@ -376,11 +377,53 @@ These are not implementation tasks. They require you to update SPEC.md.
     - `<FindingsPanel findings={result.findings.filter(f => f.category === cat)} />`
     - Empty state "No issues found in this category" when no findings for that category
   - Tab bar uses `role="tablist"` / `role="tab"` / `role="tabpanel"` ARIA
-  - Tab bar overflows horizontally on narrow viewports (`overflow-x: auto; white-space: nowrap`)
+  - Tab bar wraps to multiple rows on narrow viewports (`flex-wrap: wrap`) — no horizontal scroll
   - Active tab style: underline or fill matching the grade colour
   - Remove the `void FindingsPanel;` dead-code stub — `FindingsPanel` is now used
   - Category tab state resets to "Overview" when the site-selector tab changes (different URL selected)
   - Depends on: T-051 (ScoreReport), T-053 (theme)
+
+- [x] **T-063** Accessibility rules: ADA / EAA / EN 301 549 / WCAG 2.2 expansion (2026-04-17)
+  - `scraper/index.js` — 8 new fields: `viewport_blocks_zoom`, `meta_refresh_redirect`, `uses_accessibility_overlay`, `overlay_vendor`, `captcha_detected`, `tables_without_headers`, `child_lang_attrs_count`, `accessibility_statement_link` (on `html.semantic`); `pdf_links_count` + `non_html_document_links` on `html.links`
+  - `rules/accessibility.js` — 8 new rules added (3 critical, 4 warning, 1 warning); total 28 rules (was 20):
+    - `a11y_viewport_blocks_zoom` — WCAG 1.4.4 / EN 301 549 Cl.11.7 (critical, w=20)
+    - `a11y_meta_refresh_redirect` — WCAG 2.2.1 (critical, w=15)
+    - `a11y_tables_no_headers` — WCAG 1.3.1 (critical, w=15)
+    - `a11y_no_accessibility_statement` — EAA / EU WAD (warning, w=8)
+    - `a11y_pdf_links` — EN 301 549 Cl.10 / Section 508 E205 (warning, w=5)
+    - `a11y_captcha_on_auth` — WCAG 2.2 SC 3.3.8 / EAA (warning, w=8)
+    - `a11y_accessibility_overlay` — ADA Title III DOJ guidance (warning, w=10)
+    - `a11y_lang_of_parts` — WCAG 3.1.2 / multilingual pages only (warning, w=6)
+  - File header updated with ADA, EAA, EN 301 549, Section 508, AODA source references
+
+- [ ] **T-065** Install CodeRabbit GitHub App on `marcelohcortez/devies-site-health-check`
+  - URL: https://github.com/apps/coderabbitai → Configure → select this repo
+  - Required for the `/commit-review` workflow (§13 of SPEC) to trigger automated PR reviews
+  - After installing, re-trigger on open PR #3: comment `@coderabbitai review`
+
+- [x] **T-064** Improvements tab: page attribution + teaser cap (2026-04-22)
+  - **Issue 1 — page attribution**: `IssueSummaryPanel` now shows a teal pill badge ("Found on [path]") for findings on non-root inner pages, and "[N] pages" badge for multipage aggregate findings where multiple inner pages are affected. Homepage-only findings (path `/`) are not badged since it's obvious.
+  - **Issue 2 — generic info**: Teaser now caps at 3 findings per severity tier; excess issues shown as a dashed-border "N more issues — get the full report" row instead of listing all titles. Users see the severity shape but cannot catalogue all specific issues to self-fix.
+  - `interpreter/index.js`: MULTIPAGE_RULES findings now include `pages_count` (parsed from finding text) so the UI can show "N pages" without the full path list
+  - `types.ts`: `Finding.pages_count?: number | null` added
+  - `ScoreReport.tsx`: `IssueSummaryPanel` rewritten; `TEASER_VISIBLE = 2` constant controls cap
+  - `index.css`: `.finding-page-pill` (teal rounded badge) and `.teaser-hidden-row` (dashed lock row) added
+
+- [x] **T-059** Crawl all internal pages, not just 4 (2026-04-21)
+  - `scraper/index.js`: added `INTERNAL_LINKS_MAX = 100` — `internal_sample` now stores up to 100 links (was 30, capped by `LINK_CHECK_LIMIT`); broken-link HEAD probes still capped at 30 via their own internal slice
+  - `discoverLinks()`: removed `limit` parameter and early-break — returns all valid same-origin candidates
+  - `crawl()`: removed `maxPages` / `AUDIT_MAX_PAGES` env-var logic; now fetches ALL discovered links up to `MAX_INNER_PAGES = 50` hard ceiling; timeout increased from 60 s to 90 s
+  - `api/routes/audit.js`: updated comment to reflect new behaviour
+  - SPEC D-008 updated
+
+- [x] **T-058** Add `page_url` attribution to findings (2026-04-21)
+  - `interpreter/index.js`: each finding from BASE_RULES now includes `page_url: scrapedData.final_url || scrapedData.url`
+  - Multipage aggregate findings get `page_url: null` (paths already embedded in finding text via `affectedPaths()`)
+  - `types.ts`: `Finding.page_url?: string | null`, `SiteResult.pages_crawled?: number`
+  - `ScoreReport.tsx`: finding cards show the page path (e.g. `/about`) when `page_url` is non-null
+  - `ScoreReport.tsx`: result hero shows "N pages scanned" badge using `pages_crawled`
+  - `index.css`: `.finding-page` and `.pages-crawled-badge` styles added
+  - Answers: "which page had this issue?" for every finding
 
 - [x] **T-056** Paywall gate for findings — **implemented as teaser summary**
   - Category tabs use `IssueSummaryPanel`: shows finding titles only — no technical descriptions, no fix instructions
@@ -530,4 +573,4 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
-*Last updated: 2026-04-14. Update this file as tasks are completed or reprioritised.*
+*Last updated: 2026-04-22. Update this file as tasks are completed or reprioritised.*
