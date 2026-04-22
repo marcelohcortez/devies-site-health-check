@@ -520,7 +520,7 @@ function analyseHtmlStructure($, baseUrl) {
 
   // ── Viewport zoom lock (WCAG 1.4.4 / EN 301 549) ──
   const viewportContent = $('meta[name="viewport"]').attr('content') || '';
-  const viewportBlocksZoom = /user-scalable\s*=\s*no/i.test(viewportContent) ||
+  const viewportBlocksZoom = /user-scalable\s*=\s*(no|0)\b/i.test(viewportContent) ||
     /maximum-scale\s*=\s*1(?:\.0+)?(?:\s*[,;]|\s*$)/i.test(viewportContent);
 
   // ── Meta refresh redirect (WCAG 2.2.1) ──

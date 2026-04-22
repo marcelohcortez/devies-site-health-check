@@ -159,9 +159,11 @@ function findingPageLabel(f: Finding): string | null {
   return null;
 }
 
+const TEASER_SEV_ORDER = SEV_ORDER.filter(s => s !== 'positive');
+
 function IssueSummaryPanel({ findings }: { findings: Finding[] }) {
-  const grouped = SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
-    const items = findings.filter(f => f.severity === sev && sev !== 'positive');
+  const grouped = TEASER_SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
+    const items = findings.filter(f => f.severity === sev);
     if (items.length) acc[sev] = items;
     return acc;
   }, {});
