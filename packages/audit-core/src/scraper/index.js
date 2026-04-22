@@ -518,6 +518,79 @@ function analyseHtmlStructure($, baseUrl) {
   // Author meta tag
   const authorMeta = $('meta[name="author"]').attr('content') || null;
 
+  // ── Viewport zoom lock (WCAG 1.4.4 / EN 301 549) ──
+  const viewportContent = $('meta[name="viewport"]').attr('content') || '';
+  const viewportBlocksZoom = /user-scalable\s*=\s*no/i.test(viewportContent) ||
+    /maximum-scale\s*=\s*1(?:\.0+)?(?:\s*[,;]|\s*$)/i.test(viewportContent);
+
+  // ── Meta refresh redirect (WCAG 2.2.1) ──
+  let metaRefreshRedirect = false;
+  $('meta[http-equiv="refresh"]').each((_, el) => {
+    const content = $(el).attr('content') || '';
+    const m = content.match(/^\s*(\d+)/);
+    if (m && parseInt(m[1], 10) > 0) metaRefreshRedirect = true;
+  });
+
+  // ── Accessibility overlay detection (ADA Title III) ──
+  const OVERLAY_DOMAINS = [
+    'accessibe.com', 'userway.org', 'audioeye.com', 'equalweb.com',
+    'reciteme.com', 'maxaccess.io', 'accessiway.com', 'assistivlabs.com',
+    'widget.skiplang.com',
+  ];
+  let usesAccessibilityOverlay = false;
+  let overlayVendor = null;
+  $('script[src]').each((_, el) => {
+    const src = $(el).attr('src') || '';
+    for (const domain of OVERLAY_DOMAINS) {
+      if (src.includes(domain)) {
+        usesAccessibilityOverlay = true;
+        overlayVendor = domain;
+        return false; // break
+      }
+    }
+  });
+
+  // ── CAPTCHA detection (WCAG 2.2 SC 3.3.8 / EAA) ──
+  const captchaDetected =
+    $('script[src*="google.com/recaptcha"], script[src*="hcaptcha.com"], script[src*="turnstile.cloudflare.com"]').length > 0 ||
+    $('.g-recaptcha, .h-captcha').length > 0;
+
+  // ── Tables without header markup (WCAG 1.3.1) ──
+  let tablesWithoutHeaders = 0;
+  $('table').each((_, el) => {
+    const hasHeaders = $(el).find('th').length > 0 ||
+      $(el).find('[scope]').length > 0 ||
+      $(el).find('caption').length > 0;
+    if (!hasHeaders) tablesWithoutHeaders++;
+  });
+
+  // ── Language of parts — child lang attributes (WCAG 3.1.2) ──
+  const childLangAttrsCount = $('[lang]').not('html').length;
+
+  // ── Accessibility statement link (EAA / EU WAD) ──
+  let accessibilityStatementLink = false;
+  $('a[href]').each((_, el) => {
+    const href = ($(el).attr('href') || '').toLowerCase();
+    const text = $(el).text().trim().toLowerCase();
+    if (/accessi(bility)?[-_]?stat(ement)?/.test(href) ||
+        /\/accessibility/.test(href) ||
+        /accessibility/.test(text)) {
+      accessibilityStatementLink = true;
+      return false; // break
+    }
+  });
+
+  // ── PDF / document links (EN 301 549 Clause 10) ──
+  const DOC_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+  const nonHtmlDocumentLinks = [];
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const hrefLower = href.toLowerCase();
+    if (DOC_EXTS.some(ext => hrefLower.endsWith(ext) || hrefLower.includes(ext + '?'))) {
+      nonHtmlDocumentLinks.push(href);
+    }
+  });
+
   return {
     headings,
     heading_issues: headingIssues,
@@ -533,11 +606,13 @@ function analyseHtmlStructure($, baseUrl) {
       images_list:        images.slice(0, 20),  // first 20 for reference
     },
     links: {
-      internal_count:   internalLinks.length,
-      external_count:   externalLinks.length,
-      internal_sample:  [...new Set(internalLinks)].slice(0, INTERNAL_LINKS_MAX),
-      external_sample:  [...new Set(externalLinks)].slice(0, 10),
-      empty_text_count: emptyTextLinks,
+      internal_count:          internalLinks.length,
+      external_count:          externalLinks.length,
+      internal_sample:         [...new Set(internalLinks)].slice(0, INTERNAL_LINKS_MAX),
+      external_sample:         [...new Set(externalLinks)].slice(0, 10),
+      empty_text_count:        emptyTextLinks,
+      pdf_links_count:         nonHtmlDocumentLinks.length,
+      non_html_document_links: nonHtmlDocumentLinks.slice(0, 20),
     },
     forms: {
       count:       forms.length,
@@ -546,16 +621,24 @@ function analyseHtmlStructure($, baseUrl) {
     },
     semantic: {
       ...semantic,
-      has_skip_link: hasSkipLink,
+      has_skip_link:              hasSkipLink,
+      viewport_blocks_zoom:       viewportBlocksZoom,
+      accessibility_statement_link: accessibilityStatementLink,
+      child_lang_attrs_count:     childLangAttrsCount,
     },
-    aria_issues:              ariaIssues,
-    iframes_without_title:    iframesWithoutTitle,
-    duplicate_ids_count:      duplicateIds,
-    video_without_captions:   videoWithoutCaptions,
+    aria_issues:                ariaIssues,
+    iframes_without_title:      iframesWithoutTitle,
+    duplicate_ids_count:        duplicateIds,
+    video_without_captions:     videoWithoutCaptions,
     audio_autoplay_no_controls: audioAutoplayNoControls,
-    lists_count:              listsCount,
-    tables_count:             tablesCount,
-    author_meta:              authorMeta,
+    meta_refresh_redirect:      metaRefreshRedirect,
+    uses_accessibility_overlay: usesAccessibilityOverlay,
+    overlay_vendor:             overlayVendor,
+    captcha_detected:           captchaDetected,
+    tables_without_headers:     tablesWithoutHeaders,
+    lists_count:                listsCount,
+    tables_count:               tablesCount,
+    author_meta:                authorMeta,
   };
 }
 

@@ -383,6 +383,27 @@ These are not implementation tasks. They require you to update SPEC.md.
   - Category tab state resets to "Overview" when the site-selector tab changes (different URL selected)
   - Depends on: T-051 (ScoreReport), T-053 (theme)
 
+- [x] **T-063** Accessibility rules: ADA / EAA / EN 301 549 / WCAG 2.2 expansion (2026-04-17)
+  - `scraper/index.js` — 8 new fields: `viewport_blocks_zoom`, `meta_refresh_redirect`, `uses_accessibility_overlay`, `overlay_vendor`, `captcha_detected`, `tables_without_headers`, `child_lang_attrs_count`, `accessibility_statement_link` (on `html.semantic`); `pdf_links_count` + `non_html_document_links` on `html.links`
+  - `rules/accessibility.js` — 8 new rules added (3 critical, 4 warning, 1 warning); total 28 rules (was 20):
+    - `a11y_viewport_blocks_zoom` — WCAG 1.4.4 / EN 301 549 Cl.11.7 (critical, w=20)
+    - `a11y_meta_refresh_redirect` — WCAG 2.2.1 (critical, w=15)
+    - `a11y_tables_no_headers` — WCAG 1.3.1 (critical, w=15)
+    - `a11y_no_accessibility_statement` — EAA / EU WAD (warning, w=8)
+    - `a11y_pdf_links` — EN 301 549 Cl.10 / Section 508 E205 (warning, w=5)
+    - `a11y_captcha_on_auth` — WCAG 2.2 SC 3.3.8 / EAA (warning, w=8)
+    - `a11y_accessibility_overlay` — ADA Title III DOJ guidance (warning, w=10)
+    - `a11y_lang_of_parts` — WCAG 3.1.2 / multilingual pages only (warning, w=6)
+  - File header updated with ADA, EAA, EN 301 549, Section 508, AODA source references
+
+- [x] **T-064** Improvements tab: page attribution + teaser cap (2026-04-22)
+  - **Issue 1 — page attribution**: `IssueSummaryPanel` now shows a teal pill badge ("Found on [path]") for findings on non-root inner pages, and "[N] pages" badge for multipage aggregate findings where multiple inner pages are affected. Homepage-only findings (path `/`) are not badged since it's obvious.
+  - **Issue 2 — generic info**: Teaser now caps at 3 findings per severity tier; excess issues shown as a dashed-border "N more issues — get the full report" row instead of listing all titles. Users see the severity shape but cannot catalogue all specific issues to self-fix.
+  - `interpreter/index.js`: MULTIPAGE_RULES findings now include `pages_count` (parsed from finding text) so the UI can show "N pages" without the full path list
+  - `types.ts`: `Finding.pages_count?: number | null` added
+  - `ScoreReport.tsx`: `IssueSummaryPanel` rewritten; `TEASER_VISIBLE = 2` constant controls cap
+  - `index.css`: `.finding-page-pill` (teal rounded badge) and `.teaser-hidden-row` (dashed lock row) added
+
 - [x] **T-059** Crawl all internal pages, not just 4 (2026-04-21)
   - `scraper/index.js`: added `INTERNAL_LINKS_MAX = 100` — `internal_sample` now stores up to 100 links (was 30, capped by `LINK_CHECK_LIMIT`); broken-link HEAD probes still capped at 30 via their own internal slice
   - `discoverLinks()`: removed `limit` parameter and early-break — returns all valid same-origin candidates
@@ -547,4 +568,4 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 ---
 
-*Last updated: 2026-04-21. Update this file as tasks are completed or reprioritised.*
+*Last updated: 2026-04-22. Update this file as tasks are completed or reprioritised.*

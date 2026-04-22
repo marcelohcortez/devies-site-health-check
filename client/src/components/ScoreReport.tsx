@@ -140,12 +140,28 @@ function FindingsPanel({ findings }: { findings: Finding[] }) {
   );
 }
 
-// ── Issue summary panel (public category tabs — titles only, no fixes) ────────
-// Shows what issues exist without revealing technical details or solutions.
+// ── Issue summary panel (public category tabs) ────────────────────────────────
+// Shows issue existence and location — deliberately withholds technical details
+// and fix instructions so users need the full report to act on findings.
+
+const TEASER_VISIBLE = 2; // findings shown per severity tier before locking
+
+function findingPageLabel(f: Finding): string | null {
+  if (f.page_url) {
+    try {
+      const path = new URL(f.page_url).pathname || '/';
+      return path === '/' ? null : path; // skip root — obvious, adds no info
+    } catch { return null; }
+  }
+  if (f.pages_count && f.pages_count > 0) {
+    return `${f.pages_count} page${f.pages_count > 1 ? 's' : ''}`;
+  }
+  return null;
+}
 
 function IssueSummaryPanel({ findings }: { findings: Finding[] }) {
   const grouped = SEV_ORDER.reduce<Record<string, Finding[]>>((acc, sev) => {
-    const items = findings.filter(f => f.severity === sev);
+    const items = findings.filter(f => f.severity === sev && sev !== 'positive');
     if (items.length) acc[sev] = items;
     return acc;
   }, {});
@@ -156,25 +172,37 @@ function IssueSummaryPanel({ findings }: { findings: Finding[] }) {
 
   return (
     <div className="findings-panel">
-      {Object.entries(grouped).map(([sev, items]) => (
-        <div key={sev} className="findings-section">
-          <div className="findings-section-title">
-            <span className={`sev-badge sev-${sev}`}>{SEV_LABELS[sev]}</span>
-            {items.length} issue{items.length !== 1 ? 's' : ''}
-          </div>
+      {Object.entries(grouped).map(([sev, items]) => {
+        const visible = items.slice(0, TEASER_VISIBLE);
+        const hidden  = items.length - visible.length;
 
-          {items.map((f, i) => (
-            <div key={i} className="finding-card finding-card--teaser">
-              <div className="finding-title">{f.title}</div>
-              {f.page_url && (
-                <div className="finding-page">
-                  {(() => { try { return new URL(f.page_url).pathname || '/'; } catch { return f.page_url; } })()}
-                </div>
-              )}
+        return (
+          <div key={sev} className="findings-section">
+            <div className="findings-section-title">
+              <span className={`sev-badge sev-${sev}`}>{SEV_LABELS[sev]}</span>
+              {items.length} issue{items.length !== 1 ? 's' : ''}
             </div>
-          ))}
-        </div>
-      ))}
+
+            {visible.map((f, i) => {
+              const pageLabel = findingPageLabel(f);
+              return (
+                <div key={i} className="finding-card finding-card--teaser">
+                  <div className="finding-title">{f.title}</div>
+                  {pageLabel && (
+                    <div className="finding-page-pill">{pageLabel}</div>
+                  )}
+                </div>
+              );
+            })}
+
+            {hidden > 0 && (
+              <div className="teaser-hidden-row">
+                {hidden} more issue{hidden > 1 ? 's' : ''} — get the full report to see all details
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       <div className="teaser-cta">
         <p className="teaser-cta-text">

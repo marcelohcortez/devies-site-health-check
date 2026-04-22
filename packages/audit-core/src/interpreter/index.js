@@ -202,16 +202,21 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
         findingText = rule.title;
       }
 
+      // Extract affected page count from the finding text (format: "... N inner page(s): ...")
+      const pagesCountMatch = findingText.match(/\b(\d+)\s+inner\s+page/);
+      const pagesCount = pagesCountMatch ? parseInt(pagesCountMatch[1], 10) : pages.length;
+
       findings.push({
-        category:   rule.category,
-        severity:   rule.severity,
-        title:      rule.title,
-        finding:    findingText,
-        why:        rule.why,
-        how_to_fix: rule.how_to_fix,
-        impact:     rule.impact,
-        reference:  rule.reference || '',
-        page_url:   null, // multipage findings span multiple pages — paths are in the finding text
+        category:    rule.category,
+        severity:    rule.severity,
+        title:       rule.title,
+        finding:     findingText,
+        why:         rule.why,
+        how_to_fix:  rule.how_to_fix,
+        impact:      rule.impact,
+        reference:   rule.reference || '',
+        page_url:    null,
+        pages_count: pagesCount,
       });
 
       if (rule.severity !== 'positive' && rule.weight > 0) {

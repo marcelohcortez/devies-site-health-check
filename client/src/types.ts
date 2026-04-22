@@ -5,8 +5,10 @@ export interface Finding {
   finding?:    string;
   description?: string;
   how_to_fix?: string;
-  /** URL of the specific page where this finding was detected. Null for multipage aggregate rules (paths are in the finding text). */
+  /** URL of the specific page where this finding was detected. Null for multipage aggregate rules. */
   page_url?:   string | null;
+  /** For multipage aggregate findings: number of inner pages that triggered this rule. */
+  pages_count?: number | null;
 }
 
 export interface SiteResult {

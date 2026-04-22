@@ -189,7 +189,7 @@ audit-web/                          ← workspace root
 │       │   │   ├── seo.js          ← 19 rules
 │       │   │   ├── security.js     ← 17 rules
 │       │   │   ├── performance.js  ← 12 rules
-│       │   │   ├── accessibility.js← 18 rules
+│       │   │   ├── accessibility.js← 28 rules
 │       │   │   ├── html.js         ←  9 rules
 │       │   │   ├── wordpress.js    ← 23 rules
 │       │   │   └── strapi.js       ← 27 rules
@@ -318,8 +318,11 @@ and per-category detail views.
 - [ ] The category tab label is colour-coded by grade (green/yellow/orange/red) matching the bar colours
 - [ ] Clicking a category tab shows a **category detail view** for that category:
   - Category score circle (same SVG component, full-size) + grade
-  - All findings for that category grouped by severity (Critical → Warning → Info → Positive), rendered via `IssueSummaryPanel`
-  - Each finding card shows the **title only** — no technical description, no fix instructions (upsell gate)
+  - Findings grouped by severity (Critical → Warning → Info), rendered via `IssueSummaryPanel` (positive findings excluded from teaser)
+  - Each finding card in `IssueSummaryPanel` shows:
+    - The finding **title** (informs user of issue existence without a step-by-step fix)
+    - A teal **page location pill** — shows `/path` for issues on a specific inner page (non-root); shows "N pages" for multipage aggregate findings; omitted for homepage-only findings (path `/`)
+  - **Cap**: maximum 2 findings shown per severity tier; excess shown as a dashed-border locked row: "N more issues — get the full report to see all details"
   - A teaser CTA below the list: "Want to understand what these issues mean and how to resolve them? → Get the full report" (mailto:hello@devies.se)
   - If no findings for the category: "No issues found in this category"
   - **`FindingsPanel`** (full details: title + description + fix) is reserved for the admin `SubmissionsPage` only
@@ -327,7 +330,7 @@ and per-category detail views.
 - [ ] Active tab has a visible active indicator (underline or background highlight)
 - [ ] Tab bar wraps to multiple rows on narrow viewports (no horizontal scroll)
 - [ ] Score report hero shows a `pages scanned` badge (e.g. "5 pages scanned") alongside the platform and severity counts — confirms that inner pages were crawled
-- [ ] Each finding card shows the page path where the issue was found (e.g. `/about`) when `page_url` is present; multipage aggregate findings omit the badge (paths are already in the finding text)
+- [ ] `Finding` object carries `page_url` (homepage URL for BASE_RULES; null for multipage) and `pages_count` (integer, multipage only — count of affected inner pages)
 
 ---
 
@@ -867,13 +870,13 @@ const result   = interpret(siteData);
 | `rules/seo.js`         | SEO             | 19    |
 | `rules/security.js`    | Security        | 17    |
 | `rules/performance.js` | Performance     | 12    |
-| `rules/accessibility.js`| Accessibility  | 18    |
+| `rules/accessibility.js`| Accessibility  | 28    |
 | `rules/html.js`        | HTML_Structure  |  9    |
 | `rules/wordpress.js`   | WordPress + WooCommerce | 23 |
 | `rules/strapi.js`      | Strapi          | 27    |
 | `rules/geo.js`         | AI_Readiness    | 15    |
 | `rules/multipage.js`   | multi-category  | 10    |
-| **Total**          |                 | **150** |
+| **Total**          |                 | **160** |
 
 > GEO rules (`rules/geo.js`) are always active — no flag required. They fire on
 > every audit and contribute to the `AI_Readiness` category (15% base weight).

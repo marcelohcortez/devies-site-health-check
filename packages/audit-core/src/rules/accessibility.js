@@ -1,16 +1,21 @@
 'use strict';
 /**
- * Accessibility Rules (WCAG 2.1)
+ * Accessibility Rules (WCAG 2.1 / 2.2, ADA, EAA / EN 301 549, Section 508, AODA)
  *
  * Sources / guidelines:
  *   - WCAG 2.1 (W3C Recommendation): https://www.w3.org/TR/WCAG21/
+ *   - WCAG 2.2 (W3C Recommendation): https://www.w3.org/TR/WCAG22/
  *   - WAI-ARIA Authoring Practices: https://www.w3.org/WAI/ARIA/apg/
+ *   - EN 301 549 v3.2.1 (European Accessibility Standard for ICT — basis for EAA):
+ *       https://www.etsi.org/deliver/etsi_en/301500_301599/301549/03.02.01_60/en_301549v030201p.pdf
+ *   - ADA Title II Final Rule (2024): https://www.ada.gov/resources/2024-03-08-web-rule/
+ *   - Section 508 (US Federal): https://www.section508.gov/develop/applicability-conformance/
+ *   - AODA IASR Section 14 (Ontario): https://accessiblecampus.ca/tools-resources/
  *   - W3C: Using language attributes — https://www.w3.org/WAI/WCAG21/Techniques/html/H57
  *   - W3C: Providing text alternatives for non-text content (Success Criterion 1.1.1)
  *   - W3C: Labels or instructions for form inputs (Success Criterion 1.3.1 / 3.3.2)
  *   - W3C: Headings and Labels (Success Criterion 2.4.6)
  *   - ARIA Landmark Roles: https://www.w3.org/WAI/ARIA/apg/practices/landmark-regions/
- *   - EN 301 549 (European accessibility standard for ICT)
  */
 
 module.exports = [
@@ -248,6 +253,121 @@ module.exports = [
     how_to_fix: 'Review each ARIA issue and either correct the attribute usage or remove ARIA if it is unnecessary. Follow the WAI-ARIA Authoring Practices for correct patterns.',
     impact: 'Correct ARIA usage improves the assistive technology experience and ensures screen readers interpret the page correctly.',
     reference: 'WCAG 2.1 Success Criterion 4.1.2: Name, Role, Value (Level A)',
+  },
+
+  // ── Critical (ADA / EAA / WCAG 2.1 gaps) ─────────────────────────────────
+
+  {
+    id: 'a11y_viewport_blocks_zoom',
+    category: 'Accessibility',
+    severity: 'critical',
+    weight: 20,
+    title: 'Viewport meta tag blocks user zoom',
+    check: (d) => d.html?.semantic?.viewport_blocks_zoom === true,
+    finding: () => 'The <meta name="viewport"> tag contains user-scalable=no or maximum-scale=1, preventing users from zooming the page.',
+    why: 'Blocking zoom prevents users with low vision from enlarging text to a readable size. It is one of the most common and impactful mobile accessibility failures. This violates WCAG 2.1 SC 1.4.4 Resize Text (Level AA), ADA Title II/III, EAA/EN 301 549 Clause 11.7, Section 508, and AODA.',
+    how_to_fix: 'Remove user-scalable=no and any maximum-scale value of 1 or less from the <meta name="viewport"> tag. A safe viewport tag is: <meta name="viewport" content="width=device-width, initial-scale=1">.',
+    impact: 'Users with low vision can zoom the page up to 200% or more, dramatically improving readability on mobile devices.',
+    reference: 'WCAG 2.1 SC 1.4.4: Resize Text (Level AA) — https://www.w3.org/TR/WCAG21/#resize-text | EN 301 549 v3.2.1 Clause 11.7',
+  },
+  {
+    id: 'a11y_meta_refresh_redirect',
+    category: 'Accessibility',
+    severity: 'critical',
+    weight: 15,
+    title: 'Auto-redirect via <meta http-equiv="refresh">',
+    check: (d) => d.html?.meta_refresh_redirect === true,
+    finding: () => 'The page uses <meta http-equiv="refresh"> with a timed redirect, moving users away without their control.',
+    why: 'Automatic page redirects disrupt screen reader users mid-session, force keyboard users to lose their place, and can disorient users with cognitive disabilities. This violates WCAG 2.1 SC 2.2.1 Timing Adjustable (Level A), which requires users to be able to turn off, adjust, or extend time limits. All accessibility laws — ADA, EAA, Section 508, AODA — inherit this requirement.',
+    how_to_fix: 'Replace the meta refresh tag with a server-side redirect (HTTP 301/302) for permanent redirects. If the intent is to display a "you will be redirected" message, provide a manual link instead and remove the automatic redirect.',
+    impact: 'Users are in control of navigation and are not unexpectedly moved to a different page.',
+    reference: 'WCAG 2.1 SC 2.2.1: Timing Adjustable (Level A) — https://www.w3.org/TR/WCAG21/#timing-adjustable',
+  },
+  {
+    id: 'a11y_tables_no_headers',
+    category: 'Accessibility',
+    severity: 'critical',
+    weight: 15,
+    title: 'Data tables missing header markup',
+    check: (d) => (d.html?.tables_without_headers || 0) > 0,
+    finding: (d) => `${d.html?.tables_without_headers} table(s) have no <th> elements, scope attributes, or <caption>, making their data structure inaccessible to screen readers.`,
+    why: 'Screen readers rely on <th> elements (or scope attributes) to announce column and row headers as users navigate table cells. Without headers, every cell is read in isolation with no context of what it represents. This violates WCAG 2.1 SC 1.3.1 Info and Relationships (Level A) — a requirement shared by all accessibility laws: ADA, EAA/EN 301 549, Section 508, and AODA.',
+    how_to_fix: 'For each data table, add <th scope="col"> for column headers and <th scope="row"> for row headers. Add a <caption> to describe the table purpose. For simple tables, at minimum add <th> to the first row. Avoid using tables purely for visual layout.',
+    impact: 'Screen reader users can understand tabular data structure and navigate it efficiently by headers.',
+    reference: 'WCAG 2.1 SC 1.3.1: Info and Relationships (Level A) — https://www.w3.org/TR/WCAG21/#info-and-relationships',
+  },
+
+  // ── Warnings (EAA / WCAG 2.2 / ADA additions) ─────────────────────────────
+
+  {
+    id: 'a11y_no_accessibility_statement',
+    category: 'Accessibility',
+    severity: 'warning',
+    weight: 8,
+    title: 'No accessibility statement link found',
+    check: (d) => d.html?.semantic?.accessibility_statement_link === false,
+    finding: () => 'No link to an accessibility statement or accessibility policy was detected on this page.',
+    why: 'The European Accessibility Act (EAA / EN 301 549), the EU Web Accessibility Directive (2016/2102), and Section 508 for federal agencies all mandate a published, linked accessibility statement on every page of a website. The statement must describe the accessibility level achieved, known barriers, and contact information for reporting issues. Without it, legal compliance cannot be demonstrated.',
+    how_to_fix: 'Create a dedicated accessibility statement page (e.g., /accessibility-statement) that follows the W3C accessibility statement template. Add a visible link to it from the footer of every page, with anchor text such as "Accessibility Statement" or "Accessibility".',
+    impact: 'Demonstrates legal compliance with EAA, EU WAD, and Section 508, and provides a clear channel for users to report barriers.',
+    reference: 'EAA Directive 2019/882 | EU Web Accessibility Directive 2016/2102 | W3C Accessibility Statement Generator — https://www.w3.org/WAI/planning/statements/',
+  },
+  {
+    id: 'a11y_pdf_links',
+    category: 'Accessibility',
+    severity: 'warning',
+    weight: 5,
+    title: 'Links to PDF or Office documents detected',
+    check: (d) => (d.html?.links?.pdf_links_count || 0) > 0,
+    finding: (d) => `${d.html?.links?.pdf_links_count} link(s) to PDF or Office documents were found. These files must individually meet EN 301 549 Clause 10 accessibility requirements and cannot be assumed to be accessible.`,
+    why: 'EN 301 549 v3.2.1 Clause 10 (Non-web Documents) and Section 508 E205 require that all documents downloadable from a website — PDFs, Word files, Excel spreadsheets — meet accessibility standards. PDFs are a common source of accessibility failures: untagged documents, missing reading order, no alt text on images. This is a mandatory manual review item under EAA and Section 508.',
+    how_to_fix: 'Audit each linked PDF and Office document for accessibility: add tags, reading order, alt text for images, and meaningful headings. Use Adobe Acrobat Pro, Microsoft Office built-in accessibility checker, or PDF Accessibility Checker (PAC 2024) to identify issues. Where possible, provide an HTML version of the same content as an accessible alternative.',
+    impact: 'All downloadable content becomes accessible to screen reader users and compliant with EAA and Section 508.',
+    reference: 'EN 301 549 v3.2.1 Clause 10: Non-web Documents — https://www.etsi.org/deliver/etsi_en/301500_301599/301549/03.02.01_60/en_301549v030201p.pdf | Section 508 E205',
+  },
+  {
+    id: 'a11y_captcha_on_auth',
+    category: 'Accessibility',
+    severity: 'warning',
+    weight: 8,
+    title: 'CAPTCHA detected on page — verify accessible alternative exists',
+    check: (d) => d.html?.captcha_detected === true,
+    finding: () => 'A CAPTCHA (reCAPTCHA, hCAPTCHA, or Cloudflare Turnstile) was detected on this page. Verify that an accessible alternative authentication method is available.',
+    why: 'CAPTCHAs that require visual or audio puzzle-solving can be inaccessible to users with visual impairments, cognitive disabilities, or those using screen readers. WCAG 2.2 SC 3.3.8 Accessible Authentication (Level AA) — adopted by the EAA from June 2025 — requires that authentication not depend on a cognitive function test unless an alternative is provided. ADA Title III litigation has also targeted inaccessible CAPTCHAs.',
+    how_to_fix: 'If using reCAPTCHA v2, ensure the audio challenge is fully functional and accessible. Consider switching to reCAPTCHA v3 (invisible, no user interaction) or Cloudflare Turnstile (no puzzle). Provide a human-contact fallback (email, phone) for users who cannot complete the CAPTCHA. Never rely solely on visual-only challenges.',
+    impact: 'Users with visual, cognitive, or motor disabilities can complete authentication and access gated content.',
+    reference: 'WCAG 2.2 SC 3.3.8: Accessible Authentication (Minimum) (Level AA) — https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html',
+  },
+  {
+    id: 'a11y_accessibility_overlay',
+    category: 'Accessibility',
+    severity: 'warning',
+    weight: 10,
+    title: 'Accessibility overlay widget detected',
+    check: (d) => d.html?.uses_accessibility_overlay === true,
+    finding: (d) => `An accessibility overlay widget from ${d.html?.overlay_vendor || 'a known vendor'} was detected. Overlay widgets are widely rejected by the accessibility community and courts as insufficient for legal compliance.`,
+    why: 'Accessibility overlay products (accessiBe, UserWay, AudioEye, EqualWeb, etc.) claim to automatically fix accessibility issues via a JavaScript widget. However, the US Department of Justice has stated these tools do not reliably achieve WCAG 2.1 AA compliance, multiple US federal courts have ruled they are insufficient under ADA Title III, and hundreds of accessibility experts signed the Overlay Fact Sheet rejecting them. They can also interfere with screen readers and keyboard navigation.',
+    how_to_fix: 'Remove the overlay widget. Invest in proper accessibility remediation: audit with axe DevTools or WAVE, fix underlying HTML/CSS issues, and train developers in accessible coding practices. Engage a qualified accessibility consultant for a formal WCAG 2.1 AA audit.',
+    impact: 'Genuine accessibility for all users, reduced legal risk, and correct operation of assistive technologies without widget interference.',
+    reference: 'Overlay Fact Sheet — https://overlayfactsheet.com | DOJ ADA Title II 2024 Final Rule — https://www.ada.gov/resources/2024-03-08-web-rule/',
+  },
+  {
+    id: 'a11y_lang_of_parts',
+    category: 'Accessibility',
+    severity: 'warning',
+    weight: 6,
+    title: 'Language of parts not marked on multilingual page',
+    check: (d) => {
+      // Only flag when page has hreflang alternates (signals multilingual) but no child lang attrs
+      const hasHreflang = (d.seo?.hreflang?.length || 0) > 1;
+      const hasChildLangAttrs = (d.html?.semantic?.child_lang_attrs_count || 0) > 0;
+      return hasHreflang && !hasChildLangAttrs;
+    },
+    finding: () => 'This page has hreflang alternate links (indicating multilingual content) but no child elements use a lang attribute to mark language changes within the page.',
+    why: 'When a page contains content in more than one language, each language segment must be wrapped in an element with the appropriate lang attribute. Without this, screen readers use the root html[lang] for all content, causing incorrect pronunciation of foreign-language segments. This violates WCAG 2.1 SC 3.1.2 Language of Parts (Level AA), inherited by ADA, EAA/EN 301 549, Section 508, and AODA.',
+    how_to_fix: 'Wrap any text that differs from the primary page language in an element with the correct lang attribute. Example: <span lang="fr">Bonjour le monde</span>. Use valid BCP 47 language codes.',
+    impact: 'Screen readers pronounce all language segments correctly, improving comprehension for multilingual content.',
+    reference: 'WCAG 2.1 SC 3.1.2: Language of Parts (Level AA) — https://www.w3.org/TR/WCAG21/#language-of-parts',
   },
 
   // ── Positive ───────────────────────────────────────────────────────────────
