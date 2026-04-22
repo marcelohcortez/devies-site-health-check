@@ -1153,9 +1153,13 @@ Expected: `vite binary present` (install `npm install` in client first if not).
 
 ### 13.2 CodeRabbit setup
 
-- GitHub App: install from `https://github.com/apps/coderabbitai` if not already on the repo.
+- **GitHub App must be installed on the repo** for automated reviews to work.
+  Install from: `https://github.com/apps/coderabbitai` — click "Configure" → select `marcelohcortez/devies-site-health-check`.
 - Configuration file: `.coderabbit.yaml` (optional) — add at repo root to customise review rules.
 - Manual trigger: comment `@coderabbitai review` on any PR to re-run the review.
+- If CodeRabbit is not installed, `/commit-review` performs a self-review of the diff instead and commits any fixes found before pushing.
+
+> **Status (2026-04-22):** CodeRabbit GitHub App is NOT yet installed on `marcelohcortez/devies-site-health-check`. Install it before the next PR cycle to enable automated reviews.
 
 ### 13.3 Skill location
 

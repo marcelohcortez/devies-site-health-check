@@ -396,6 +396,11 @@ These are not implementation tasks. They require you to update SPEC.md.
     - `a11y_lang_of_parts` — WCAG 3.1.2 / multilingual pages only (warning, w=6)
   - File header updated with ADA, EAA, EN 301 549, Section 508, AODA source references
 
+- [ ] **T-065** Install CodeRabbit GitHub App on `marcelohcortez/devies-site-health-check`
+  - URL: https://github.com/apps/coderabbitai → Configure → select this repo
+  - Required for the `/commit-review` workflow (§13 of SPEC) to trigger automated PR reviews
+  - After installing, re-trigger on open PR #3: comment `@coderabbitai review`
+
 - [x] **T-064** Improvements tab: page attribution + teaser cap (2026-04-22)
   - **Issue 1 — page attribution**: `IssueSummaryPanel` now shows a teal pill badge ("Found on [path]") for findings on non-root inner pages, and "[N] pages" badge for multipage aggregate findings where multiple inner pages are affected. Homepage-only findings (path `/`) are not badged since it's obvious.
   - **Issue 2 — generic info**: Teaser now caps at 3 findings per severity tier; excess issues shown as a dashed-border "N more issues — get the full report" row instead of listing all titles. Users see the severity shape but cannot catalogue all specific issues to self-fix.
