@@ -35,15 +35,16 @@ module.exports = [
   // ── SEO aggregate rules ──────────────────────────────────────────────────────
 
   {
-    id:       'multi_pages_missing_title',
-    category: 'SEO',
-    severity: 'warning',
-    weight:   8,
-    title:    'Inner pages missing title tag',
+    id:         'multi_pages_missing_title',
+    category:   'SEO',
+    severity:   'warning',
+    weight:     8,
+    title:      'Page missing title tag',
     check:  (d) => getPages(d).some(p => p.seo?.title?.missing),
+    pageFilter: (p) => p.seo?.title?.missing,
     finding: (d) => {
       const bad = getPages(d).filter(p => p.seo?.title?.missing);
-      return `Missing <title> on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+      return `Missing <title> tag. Every page needs a unique, descriptive title (30–60 characters).`;
     },
     why:        'Title tags are the primary on-page SEO signal and are displayed in search engine results.',
     how_to_fix: 'Add a unique, descriptive <title> tag (30–60 characters) to every page.',
@@ -52,15 +53,15 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_title_too_long',
-    category: 'SEO',
-    severity: 'warning',
-    weight:   4,
-    title:    'Inner pages have overly long title tags',
+    id:         'multi_pages_title_too_long',
+    category:   'SEO',
+    severity:   'warning',
+    weight:     4,
+    title:      'Title tag too long',
     check:  (d) => getPages(d).some(p => p.seo?.title?.too_long),
+    pageFilter: (p) => p.seo?.title?.too_long,
     finding: (d) => {
-      const bad = getPages(d).filter(p => p.seo?.title?.too_long);
-      return `Title tag exceeds 60 characters on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+      return `Title tag exceeds 60 characters and will be truncated in search result snippets.`;
     },
     why:        'Titles over 60 characters are truncated in search result snippets, reducing click-through rate.',
     how_to_fix: 'Trim title tags to 30–60 characters, keeping the most important keyword near the start.',
@@ -69,15 +70,15 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_missing_meta_desc',
-    category: 'SEO',
-    severity: 'warning',
-    weight:   6,
-    title:    'Inner pages missing meta description',
+    id:         'multi_pages_missing_meta_desc',
+    category:   'SEO',
+    severity:   'warning',
+    weight:     6,
+    title:      'Page missing meta description',
     check:  (d) => getPages(d).some(p => p.seo?.meta_description?.missing),
+    pageFilter: (p) => p.seo?.meta_description?.missing,
     finding: (d) => {
-      const bad = getPages(d).filter(p => p.seo?.meta_description?.missing);
-      return `Missing meta description on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+      return `No meta description. Search engines will generate their own snippet, reducing click-through rate.`;
     },
     why:        'Meta descriptions influence click-through rates from search results. Without one, search engines will generate their own snippet.',
     how_to_fix: 'Add a concise meta description (70–160 characters) to every page.',
@@ -86,15 +87,15 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_no_h1',
-    category: 'SEO',
-    severity: 'warning',
-    weight:   6,
-    title:    'Inner pages missing H1 heading',
+    id:         'multi_pages_no_h1',
+    category:   'SEO',
+    severity:   'warning',
+    weight:     6,
+    title:      'Page missing H1 heading',
     check:  (d) => getPages(d).some(p => Array.isArray(p.html?.headings?.h1) && p.html.headings.h1.length === 0),
+    pageFilter: (p) => Array.isArray(p.html?.headings?.h1) && p.html.headings.h1.length === 0,
     finding: (d) => {
-      const bad = getPages(d).filter(p => Array.isArray(p.html?.headings?.h1) && p.html.headings.h1.length === 0);
-      return `No H1 heading on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+      return `No H1 heading found. Every page should have exactly one H1 that describes its primary topic.`;
     },
     why:        'The H1 tag signals to search engines what the primary topic of the page is.',
     how_to_fix: 'Add one H1 tag per page that summarises the page topic and aligns with the title tag.',
@@ -105,16 +106,16 @@ module.exports = [
   // ── Accessibility aggregate rules ────────────────────────────────────────────
 
   {
-    id:       'multi_pages_missing_alt',
-    category: 'Accessibility',
-    severity: 'warning',
-    weight:   8,
-    title:    'Inner pages have images missing alt text',
+    id:         'multi_pages_missing_alt',
+    category:   'Accessibility',
+    severity:   'warning',
+    weight:     8,
+    title:      'Images missing alt text',
     check:  (d) => getPages(d).some(p => (p.html?.images?.missing_alt || 0) > 0),
-    finding: (d) => {
-      const bad = getPages(d).filter(p => (p.html?.images?.missing_alt || 0) > 0);
-      const total = bad.reduce((s, p) => s + p.html.images.missing_alt, 0);
-      return `${total} image${total > 1 ? 's' : ''} missing alt attribute across ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+    pageFilter: (p) => (p.html?.images?.missing_alt || 0) > 0,
+    finding: (d, page) => {
+      const n = page?.html?.images?.missing_alt || 0;
+      return `${n} image${n !== 1 ? 's' : ''} missing alt attribute. Screen readers cannot convey these images to visually impaired users (WCAG 1.1.1).`;
     },
     why:        'Images without alt text are invisible to screen readers, failing WCAG 1.1.1 (Level A).',
     how_to_fix: 'Add descriptive alt attributes to all meaningful images. Use alt="" for decorative images.',
@@ -123,16 +124,16 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_inputs_no_label',
-    category: 'Accessibility',
-    severity: 'warning',
-    weight:   7,
-    title:    'Inner pages have form inputs without labels',
+    id:         'multi_pages_inputs_no_label',
+    category:   'Accessibility',
+    severity:   'warning',
+    weight:     7,
+    title:      'Form inputs without labels',
     check:  (d) => getPages(d).some(p => (p.html?.forms?.total_inputs_without_label || 0) > 0),
-    finding: (d) => {
-      const bad = getPages(d).filter(p => (p.html?.forms?.total_inputs_without_label || 0) > 0);
-      const total = bad.reduce((s, p) => s + p.html.forms.total_inputs_without_label, 0);
-      return `${total} unlabelled form input${total > 1 ? 's' : ''} across ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+    pageFilter: (p) => (p.html?.forms?.total_inputs_without_label || 0) > 0,
+    finding: (d, page) => {
+      const n = page?.html?.forms?.total_inputs_without_label || 0;
+      return `${n} form input${n !== 1 ? 's' : ''} without associated labels. Screen reader users cannot determine the purpose of these fields (WCAG 1.3.1).`;
     },
     why:        'Form inputs without labels are inaccessible to screen readers, failing WCAG 1.3.1 and 3.3.2 (Level A).',
     how_to_fix: 'Associate every input with a <label for="id"> element or add an aria-label attribute.',
@@ -141,16 +142,16 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_links_no_text',
-    category: 'Accessibility',
-    severity: 'warning',
-    weight:   5,
-    title:    'Inner pages have links without accessible text',
+    id:         'multi_pages_links_no_text',
+    category:   'Accessibility',
+    severity:   'warning',
+    weight:     5,
+    title:      'Links without accessible text',
     check:  (d) => getPages(d).some(p => (p.html?.links?.empty_text_count || 0) > 0),
-    finding: (d) => {
-      const bad = getPages(d).filter(p => (p.html?.links?.empty_text_count || 0) > 0);
-      const total = bad.reduce((s, p) => s + p.html.links.empty_text_count, 0);
-      return `${total} link${total > 1 ? 's' : ''} with no accessible name across ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+    pageFilter: (p) => (p.html?.links?.empty_text_count || 0) > 0,
+    finding: (d, page) => {
+      const n = page?.html?.links?.empty_text_count || 0;
+      return `${n} link${n !== 1 ? 's' : ''} with no text or aria-label. Screen reader users cannot determine link purpose (WCAG 2.4.4).`;
     },
     why:        'Links without text or aria-label are meaningless to screen reader users, failing WCAG 2.4.4 (Level A).',
     how_to_fix: 'Add descriptive link text or an aria-label attribute to all links.',
@@ -159,15 +160,15 @@ module.exports = [
   },
 
   {
-    id:       'multi_pages_no_lang',
-    category: 'Accessibility',
-    severity: 'warning',
-    weight:   5,
-    title:    'Inner pages missing lang attribute',
+    id:         'multi_pages_no_lang',
+    category:   'Accessibility',
+    severity:   'warning',
+    weight:     5,
+    title:      'Page missing lang attribute',
     check:  (d) => getPages(d).some(p => !p.html?.semantic?.lang_attr),
+    pageFilter: (p) => !p.html?.semantic?.lang_attr,
     finding: (d) => {
-      const bad = getPages(d).filter(p => !p.html?.semantic?.lang_attr);
-      return `Missing lang attribute on <html> on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+      return `Missing lang attribute on <html>. Screen readers need this to use correct language pronunciation (WCAG 3.1.1).`;
     },
     why:        'The lang attribute helps screen readers use the correct language pronunciation, required by WCAG 3.1.1 (Level A).',
     how_to_fix: 'Add lang="en" (or the appropriate language code) to the <html> element on every page.',
@@ -178,16 +179,16 @@ module.exports = [
   // ── Security aggregate rule ──────────────────────────────────────────────────
 
   {
-    id:       'multi_pages_mixed_content',
-    category: 'Security',
-    severity: 'warning',
-    weight:   7,
-    title:    'Inner pages load mixed HTTP/HTTPS content',
+    id:         'multi_pages_mixed_content',
+    category:   'Security',
+    severity:   'warning',
+    weight:     7,
+    title:      'Page loads mixed HTTP/HTTPS content',
     check:  (d) => getPages(d).some(p => (p.security?.mixed_content_count || 0) > 0),
-    finding: (d) => {
-      const bad = getPages(d).filter(p => (p.security?.mixed_content_count || 0) > 0);
-      const total = bad.reduce((s, p) => s + p.security.mixed_content_count, 0);
-      return `${total} mixed-content resource${total > 1 ? 's' : ''} (HTTP on HTTPS page) across ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+    pageFilter: (p) => (p.security?.mixed_content_count || 0) > 0,
+    finding: (d, page) => {
+      const n = page?.security?.mixed_content_count || 0;
+      return `${n} resource${n !== 1 ? 's' : ''} loaded over HTTP on an HTTPS page. Attackers can intercept or modify these resources.`;
     },
     why:        'Mixed content allows attackers to intercept or modify resources loaded over HTTP, compromising HTTPS pages.',
     how_to_fix: 'Update all resource URLs to use HTTPS. Add a Content-Security-Policy: upgrade-insecure-requests header.',
@@ -198,15 +199,16 @@ module.exports = [
   // ── HTML structure aggregate rule ────────────────────────────────────────────
 
   {
-    id:       'multi_pages_duplicate_ids',
-    category: 'HTML_Structure',
-    severity: 'warning',
-    weight:   4,
-    title:    'Inner pages have duplicate HTML IDs',
+    id:         'multi_pages_duplicate_ids',
+    category:   'HTML_Structure',
+    severity:   'warning',
+    weight:     4,
+    title:      'Page has duplicate HTML IDs',
     check:  (d) => getPages(d).some(p => (p.html?.duplicate_ids_count || 0) > 0),
-    finding: (d) => {
-      const bad = getPages(d).filter(p => (p.html?.duplicate_ids_count || 0) > 0);
-      return `Duplicate HTML IDs on ${bad.length} inner page${bad.length > 1 ? 's' : ''}: ${affectedPaths(bad)}`;
+    pageFilter: (p) => (p.html?.duplicate_ids_count || 0) > 0,
+    finding: (d, page) => {
+      const n = page?.html?.duplicate_ids_count || 0;
+      return `${n} duplicate ID${n !== 1 ? 's' : ''} found. Duplicate IDs break JavaScript, CSS targeting, and ARIA references (WCAG 4.1.1).`;
     },
     why:        'Duplicate IDs break JavaScript, CSS targeting, and ARIA references, failing WCAG 4.1.1.',
     how_to_fix: 'Ensure every id attribute value is unique within each HTML document.',
