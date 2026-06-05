@@ -184,6 +184,13 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
   }
 
   // ── Run multipage aggregate rules (only when inner pages are present) ────
+  // For each rule:
+  //   - If the rule has a pageFilter, emit one finding per affected page
+  //     (up to PER_PAGE_LIMIT). When more pages are affected, fall back to
+  //     a single aggregate finding with pages_count.
+  //   - Rules without pageFilter always emit one aggregate finding.
+  const PER_PAGE_LIMIT = 8;
+
   if (pages.length > 0) {
     for (const rule of MULTIPAGE_RULES) {
       let fired = false;
@@ -195,6 +202,61 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
 
       if (!fired) continue;
 
+      if (rule.severity !== 'positive' && rule.weight > 0) {
+        penalties[rule.category] = (penalties[rule.category] || 0) + rule.weight;
+      }
+
+      // ── Per-page emissions (when pageFilter is available) ─────────────────
+      if (typeof rule.pageFilter === 'function') {
+        const affectedPages = pages.filter(rule.pageFilter);
+
+        if (affectedPages.length <= PER_PAGE_LIMIT) {
+          // Emit one finding per affected page with its specific URL
+          for (const page of affectedPages) {
+            let findingText = rule.title;
+            try {
+              // Pass the individual page as second arg for page-specific counts
+              findingText = typeof rule.finding === 'function'
+                ? rule.finding(input, page)
+                : rule.title;
+            } catch { /* use title as fallback */ }
+
+            findings.push({
+              category:    rule.category,
+              severity:    rule.severity,
+              title:       rule.title,
+              finding:     findingText,
+              why:         rule.why,
+              how_to_fix:  rule.how_to_fix,
+              impact:      rule.impact,
+              reference:   rule.reference || '',
+              page_url:    page.url || null,
+              pages_count: null,
+            });
+          }
+          continue; // skip aggregate emission below
+        }
+
+        // Too many pages — fall through to aggregate emission with pages_count
+        let findingText = rule.title;
+        try { findingText = rule.finding(input); } catch { /* use title */ }
+
+        findings.push({
+          category:    rule.category,
+          severity:    rule.severity,
+          title:       rule.title,
+          finding:     findingText,
+          why:         rule.why,
+          how_to_fix:  rule.how_to_fix,
+          impact:      rule.impact,
+          reference:   rule.reference || '',
+          page_url:    null,
+          pages_count: affectedPages.length,
+        });
+        continue;
+      }
+
+      // ── Legacy: no pageFilter — emit one aggregate finding ────────────────
       let findingText = '';
       try {
         findingText = rule.finding(input);
@@ -216,12 +278,8 @@ function interpret(input, options = {}) {  // eslint-disable-line no-unused-vars
         impact:      rule.impact,
         reference:   rule.reference || '',
         page_url:    null,
-        pages_count: pagesCount,
+        pages_count: pages.length,
       });
-
-      if (rule.severity !== 'positive' && rule.weight > 0) {
-        penalties[rule.category] = (penalties[rule.category] || 0) + rule.weight;
-      }
     }
   }
 

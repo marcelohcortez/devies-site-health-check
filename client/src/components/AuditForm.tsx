@@ -48,9 +48,10 @@ export default function AuditForm({ onSubmit, error, submitting }: AuditFormProp
         {/* ── Header ── */}
         <div className="form-header">
           <DeviesHeader />
+          <h1>Get Your Free<br />Website Audit</h1>
           <p>
-            Get a comprehensive analysis of your website's SEO, Security,
-            Performance and Accessibility — free, instant, no login required.
+            Instant analysis across SEO, Security, Performance, Accessibility
+            and more — no login required.
           </p>
         </div>
 
