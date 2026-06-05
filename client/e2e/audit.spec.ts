@@ -133,57 +133,6 @@ test.describe('Audit flow — single site', () => {
   });
 });
 
-test.describe('Audit flow — multiple sites', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Multiple Websites' }).click();
-    await page.getByLabel('Your Name').fill('Jane Smith');
-    await page.getByLabel('Email Address').fill('jane@example.com');
-    await page.getByLabel(/Website URLs/).fill(
-      'https://example.com\nhttps://another.com'
-    );
-    await page.getByRole('checkbox').check();
-  });
-
-  test('shows site-selector tabs for each result', async ({ page }) => {
-    await mockAudit(page, { results: [MOCK_RESULT, MOCK_RESULT_2] });
-    await page.getByRole('button', { name: 'Run Audit' }).click();
-
-    const tablist = page.getByRole('tablist', { name: 'Select website' });
-    await expect(tablist).toBeVisible();
-    await expect(page.getByRole('tab', { name: /example\.com/ })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /another\.com/ })).toBeVisible();
-  });
-
-  test('first site is selected by default', async ({ page }) => {
-    await mockAudit(page, { results: [MOCK_RESULT, MOCK_RESULT_2] });
-    await page.getByRole('button', { name: 'Run Audit' }).click();
-
-    const firstTab = page.getByRole('tab', { name: /example\.com/ });
-    await expect(firstTab).toHaveAttribute('aria-selected', 'true');
-  });
-
-  test('clicking second tab switches active result', async ({ page }) => {
-    await mockAudit(page, { results: [MOCK_RESULT, MOCK_RESULT_2] });
-    await page.getByRole('button', { name: 'Run Audit' }).click();
-
-    await page.getByRole('tab', { name: /another\.com/ }).click();
-
-    await expect(page.locator('.score-num')).toContainText('55');
-    // Scope to .result-url to avoid matching the hidden textarea value
-    await expect(page.locator('.result-url')).toContainText('https://another.com');
-  });
-
-  test('no site-selector tabs for single result', async ({ page }) => {
-    // Override the textarea to have one URL only
-    await page.getByLabel(/Website URLs/).fill('https://example.com');
-    await mockAudit(page, { results: [MOCK_RESULT] });
-    await page.getByRole('button', { name: 'Run Audit' }).click();
-
-    await expect(page.getByRole('tablist')).not.toBeVisible();
-  });
-});
-
 test.describe('Audit flow — grade display', () => {
   const gradeTable = [
     { score: 95, letter: 'A', cls: 'grade-a' },

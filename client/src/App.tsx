@@ -55,7 +55,7 @@ function AuditApp() {
           <p className="loading-title">Running audit…</p>
           <p className="loading-sub">
             Analysing SEO, Security, Performance, Accessibility and more.
-            <br />This may take up to 30 seconds per site.
+            <br />This may take up to 30 seconds.
           </p>
         </div>
       )}

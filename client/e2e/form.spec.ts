@@ -20,36 +20,6 @@ test.describe('Audit Form', () => {
     await expect(page.getByRole('button', { name: 'Run Audit' })).toBeVisible();
   });
 
-  test('mode toggle switches to multiple URLs input', async ({ page }) => {
-    await page.getByRole('button', { name: 'Multiple Websites' }).click();
-    // Label text is "Website URLs (0 / 10)" — the regex matches the start
-    await expect(page.getByLabel(/Website URLs/)).toBeVisible();
-    // Use exact: true so "Website URLs (0/10)" is not matched by "Website URL"
-    await expect(page.getByLabel('Website URL', { exact: true })).not.toBeVisible();
-  });
-
-  test('shows URL count when typing in multiple mode', async ({ page }) => {
-    await page.getByRole('button', { name: 'Multiple Websites' }).click();
-    await page.getByLabel(/Website URLs/).fill(
-      'https://site1.com\nhttps://site2.com\nhttps://site3.com'
-    );
-    await expect(page.getByText('3 / 10')).toBeVisible();
-  });
-
-  test('caps URL count at 10 in multiple mode', async ({ page }) => {
-    await page.getByRole('button', { name: 'Multiple Websites' }).click();
-    const urls = Array.from({ length: 12 }, (_, i) => `https://site${i + 1}.com`).join('\n');
-    await page.getByLabel(/Website URLs/).fill(urls);
-    await expect(page.getByText('10 / 10')).toBeVisible();
-  });
-
-  test('switching back to single mode restores URL input', async ({ page }) => {
-    await page.getByRole('button', { name: 'Multiple Websites' }).click();
-    await page.getByRole('button', { name: 'Single Website' }).click();
-    await expect(page.getByLabel('Website URL')).toBeVisible();
-    await expect(page.getByLabel(/Website URLs/)).not.toBeVisible();
-  });
-
   // React 18 batches setSubmitting(true) + setView('loading') in the same tick,
   // so the form hides before an intermediate 'Running…' render can appear.
   // The correct observable behavior is the loading screen appearing.

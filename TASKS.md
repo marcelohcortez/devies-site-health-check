@@ -263,9 +263,8 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 - [ ] **T-045** [TEST] API route tests
   - 400 on missing name/email
-  - 400 on >10 URLs
+  - 400 if more than 1 URL provided
   - 200 with valid single URL (mock scraper in tests)
-  - 200 with multiple URLs
   - Submissions table has a new row after successful audit
   - `data_json` column is not null after successful audit
   - `GET /api/submissions/:id/data` returns valid JSON that parses without error
@@ -356,8 +355,7 @@ These are not implementation tasks. They require you to update SPEC.md.
 
 - [x] **T-050** Migrate / adapt `AuditForm` component
   - Source: current `audit-web/client/src/components/AuditForm.jsx`
-  - Multiple-URL mode uses a single textarea (one URL per line, up to 10) — **not** separate inputs
-  - Extra lines beyond 10 are silently ignored at submit time
+  - Single URL input only
   - On validation or API error: form fields are preserved (AuditForm stays mounted via `display:none` during loading; `submitting` resets via `useEffect` when `error` prop changes)
   - [TODO: Add GDPR / privacy notice copy per F-001 last criterion]
 

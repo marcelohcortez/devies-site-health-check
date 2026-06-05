@@ -216,13 +216,13 @@ Browser (iframe)
   ▼
 apps/web — API route (/api/audit)
   │
-  │  2. Validate input (≤ 10 URLs, name, email required)
-  │  3. For each URL (parallel):
+  │  2. Validate input (exactly 1 URL, name, email required)
+  │  3. For the URL:
   │       a. packages/audit-core → scrape(url)   → scrapedData
   │       b. packages/audit-core → interpret(scrapedData) → result
   │  4. Assemble audit_data.json (url, scrape, interpretation, metadata)
-  │  5. Save submission(s) + audit_data.json to DB [D-004]
-  │  6. Return JSON results (interpretation only — no raw scrape)
+  │  5. Save submission + audit_data.json to DB [D-004]
+  │  6. Return JSON result (interpretation only — no raw scrape)
   ▼
 Browser
   │
@@ -245,13 +245,11 @@ Each feature has:
 
 ### F-001 — Audit Request Form
 
-**Description:** A web form that collects the user's name, email, and one or
-more website URLs before starting the audit.
+**Description:** A web form that collects the user's name, email, and a single
+website URL before starting the audit.
 
 **Acceptance criteria:**
-- [ ] Form shows fields: Name (text), Email (email), Website URL(s)
-- [ ] Toggling between "Single website" and "Multiple websites" mode
-- [ ] In multiple mode: a single textarea accepts one URL per line (up to 10); extra lines are ignored
+- [ ] Form shows fields: Name (text), Email (email), Website URL
 - [ ] Submit is disabled while a request is in flight
 - [ ] All fields are required; HTML5 validation fires before fetch
 - [ ] An inline error message is shown if the API returns an error
@@ -280,25 +278,10 @@ more website URLs before starting the audit.
 
 ---
 
-### F-003 — Multi-URL Audit
+### F-003 — Score Report (in-browser display)
 
-**Description:** Runs audits on 2–10 URLs in parallel and returns all results.
-
-**Acceptance criteria:**
-- [ ] All URLs are audited in parallel (not sequential)
-- [ ] Partial failure: if one URL fails to scrape, the API returns results for the others plus an error entry for the failed URL — it does NOT return 500
-- [ ] UI shows a tab per site; clicking a tab switches the displayed result
-- [ ] Tab shows: hostname + mini score badge
-- [ ] Per-URL errors display as a score of 0
-
----
-
-### F-004 — Score Report (in-browser display)
-
-**Description:** The web view shown after a successful audit. Has two levels of
-tab navigation: (1) a site-selector tab bar when multiple URLs are audited, and
-(2) a category tab bar within each site result for switching between an overview
-and per-category detail views.
+**Description:** The web view shown after a successful audit. Has a category
+tab bar for switching between an overview and per-category detail views.
 
 **Acceptance criteria:**
 
@@ -617,7 +600,7 @@ All aggregate rules include the affected page paths in their `finding` descripti
 {
   "name":    "string (required, 1–100 chars)",
   "email":   "string (required, valid email)",
-  "urls":    ["string (1–10 URLs, each valid https:// or http://)"],
+  "urls":    ["string (exactly 1 URL, valid https:// or http://)"],
   "consent": true
 }
 ```
@@ -668,7 +651,7 @@ All aggregate rules include the affected page paths in their `finding` descripti
 ```
 
 **Constraints:**
-- Max 10 URLs per request
+- Exactly 1 URL per request
 - `consent: true` required — returns 400 if absent or false
 - [TODO: Define max response time SLA — e.g. 30 s per URL before timeout]
 - Rate limit: 5 requests/IP/hour (override via `RATE_LIMIT_MAX_AUDIT`)
