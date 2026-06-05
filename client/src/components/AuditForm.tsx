@@ -11,34 +11,23 @@ interface AuditFormProps {
 /**
  * AuditForm
  *
- * Collects: name, email, one or multiple URLs (max 10).
+ * Collects: name, email, and a single website URL.
  * Calls onSubmit({ name, email, urls }) when the form is submitted.
  * `submitting` is controlled by the parent so the button resets correctly
  * when the user clicks "New Audit" after a successful run.
  */
 export default function AuditForm({ onSubmit, error, submitting }: AuditFormProps) {
-  const [name,      setName]      = useState('');
-  const [email,     setEmail]     = useState('');
-  const [mode,      setMode]      = useState<'single' | 'multiple'>('single');
-  const [singleUrl, setSingleUrl] = useState('');
-  const [multiText, setMultiText] = useState('');
-  const [consent,   setConsent]   = useState(false);
-
-  // ── Derive URL count from textarea ───────────────────────────────────────
-  const parsedUrls = multiText.split('\n').map(u => u.trim()).filter(Boolean);
-  const urlCount   = Math.min(parsedUrls.length, 10);
+  const [name,    setName]    = useState('');
+  const [email,   setEmail]   = useState('');
+  const [url,     setUrl]     = useState('');
+  const [consent, setConsent] = useState(false);
 
   // ── Submit ───────────────────────────────────────────────────────────────
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    const urlList =
-      mode === 'single'
-        ? [singleUrl.trim()]
-        : parsedUrls.slice(0, 10);
-
     if (!consent) return;
-    onSubmit({ name: name.trim(), email: email.trim(), urls: urlList, consent: true });
+    onSubmit({ name: name.trim(), email: email.trim(), urls: [url.trim()], consent: true });
   }
 
   return (
@@ -86,57 +75,18 @@ export default function AuditForm({ onSubmit, error, submitting }: AuditFormProp
             </div>
           </div>
 
-          {/* Mode toggle */}
-          <div className="mode-toggle" role="group" aria-label="Audit mode">
-            <button
-              type="button"
-              className={`toggle-btn${mode === 'single' ? ' active' : ''}`}
-              onClick={() => setMode('single')}
-            >
-              Single Website
-            </button>
-            <button
-              type="button"
-              className={`toggle-btn${mode === 'multiple' ? ' active' : ''}`}
-              onClick={() => setMode('multiple')}
-            >
-              Multiple Websites
-            </button>
+          {/* URL input */}
+          <div className="field">
+            <label htmlFor="url">Website URL</label>
+            <input
+              id="url"
+              type="url"
+              placeholder="https://example.com"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              required
+            />
           </div>
-
-          {/* URL input(s) */}
-          {mode === 'single' ? (
-            <div className="field">
-              <label htmlFor="url-single">Website URL</label>
-              <input
-                id="url-single"
-                type="url"
-                placeholder="https://example.com"
-                value={singleUrl}
-                onChange={e => setSingleUrl(e.target.value)}
-                required
-              />
-            </div>
-          ) : (
-            <div className="field">
-              <label htmlFor="url-multi">
-                Website URLs
-                <span className="label-hint"> ({urlCount} / 10)</span>
-              </label>
-              <textarea
-                id="url-multi"
-                className="url-textarea"
-                placeholder={'https://site1.com\nhttps://site2.com\nhttps://site3.com'}
-                value={multiText}
-                onChange={e => setMultiText(e.target.value)}
-                rows={5}
-                required
-              />
-              <span className="label-hint" style={{ fontSize: 12 }}>
-                One URL per line — up to 10. Extra lines are ignored.
-              </span>
-            </div>
-          )}
 
           {/* Consent */}
           <label className="consent-row">

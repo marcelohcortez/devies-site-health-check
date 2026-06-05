@@ -5,8 +5,8 @@
  *
  * POST /api/audit
  *   Body: { name, email, urls[] }
- *   - Validates input (1–10 URLs)
- *   - Runs scrape + rule-interpret in parallel for each URL
+ *   - Validates input (exactly 1 URL)
+ *   - Runs scrape + rule-interpret for the URL
  *   - Assembles audit_data.json and saves to DB alongside submission
  *   - Returns score results to the client (no raw scrape data)
  *
@@ -121,10 +121,10 @@ router.post('/audit', async (req, res) => {
   if (!EMAIL_RE.test(trimEmail)) return res.status(400).json({ error: 'Invalid email address.' });
 
   if (!Array.isArray(urls) || urls.length === 0) {
-    return res.status(400).json({ error: 'At least one URL is required.' });
+    return res.status(400).json({ error: 'A URL is required.' });
   }
-  if (urls.length > 10) {
-    return res.status(400).json({ error: 'Maximum 10 URLs per request.' });
+  if (urls.length !== 1) {
+    return res.status(400).json({ error: 'Only one URL per request is allowed.' });
   }
 
   const cleanUrls = urls
@@ -137,80 +137,48 @@ router.post('/audit', async (req, res) => {
   }
 
   // ── SSRF prevention — block private/loopback addresses ───────────────────────
-  const blockedUrl = cleanUrls.find(isPrivateUrl);
-  if (blockedUrl) {
+  const url = cleanUrls[0];
+  if (isPrivateUrl(url)) {
     return res.status(400).json({ error: 'URL points to a private or reserved address.' });
   }
 
-  // ── Run audits in parallel — partial failure: one URL error ≠ whole request error ──
-  // Attach the url to each rejection so the client knows which URL failed.
-  const settled = await Promise.allSettled(
-    cleanUrls.map(url =>
-      runAudit(url).catch(err => {
-        err.failedUrl = url;
-        return Promise.reject(err);
-      })
-    )
-  );
-
-  // Fail entirely only when every URL failed
-  const allFailed = settled.every(r => r.status === 'rejected');
-  if (allFailed) {
-    const firstErr = settled[0].reason;
-    console.error('[Audit] All URLs failed. First error:', firstErr?.message);
-    return res.status(500).json({ error: 'All URLs failed to audit. Please check the URLs and try again.' });
-  }
-
+  // ── Run audit for the single URL ──────────────────────────────────────────────
   try {
-    const responseResults = [];
+    const { auditData, interpretation } = await runAudit(url);
 
-    for (const result of settled) {
-      if (result.status === 'rejected') {
-        const reason = result.reason;
-        console.error('[Audit] URL failed:', reason?.message);
-        responseResults.push({
-          url:   reason?.failedUrl ?? null,
-          error: reason?.message  ?? 'Audit failed for this URL.',
-        });
-        continue;
-      }
+    await saveSubmission({
+      name:     trimName,
+      email:    trimEmail,
+      url,
+      score:    interpretation.overall_score,
+      platform: interpretation.platform,
+      dataJson: auditData,
+    });
 
-      const { auditData, interpretation, url } = result.value;
+    const responseResult = {
+      url,
+      overall_score:   interpretation.overall_score,
+      summary:         interpretation.summary,
+      category_scores: interpretation.category_scores,
+      findings:        interpretation.findings,
+      platform:        interpretation.platform,
+      pages_crawled:   interpretation.pages_crawled,
+    };
 
-      await saveSubmission({
-        name:     trimName,
-        email:    trimEmail,
+    // ── Send result email — await so serverless functions don't terminate early
+    try {
+      await sendAuditResult({
+        to:             trimEmail,
         url,
-        score:    interpretation.overall_score,
-        platform: interpretation.platform,
-        dataJson: auditData,
+        score:          interpretation.overall_score,
+        categoryScores: interpretation.category_scores,
+        summary:        interpretation.summary,
       });
-
-      responseResults.push({
-        url,
-        overall_score:   interpretation.overall_score,
-        summary:         interpretation.summary,
-        category_scores: interpretation.category_scores,
-        findings:        interpretation.findings,
-        platform:        interpretation.platform,
-        pages_crawled:   interpretation.pages_crawled,
-      });
-
-      // ── Send result email — await so serverless functions don't terminate early
-      try {
-        await sendAuditResult({
-          to:             trimEmail,
-          url,
-          score:          interpretation.overall_score,
-          categoryScores: interpretation.category_scores,
-          summary:        interpretation.summary,
-        });
-      } catch (err) {
-        console.error('[email] Failed to send audit result:', err.message);
-      }
+    } catch (err) {
+      console.error('[email] Failed to send audit result:', err.message);
     }
 
-    return res.json({ success: true, results: responseResults });
+    return res.json({ success: true, results: [responseResult] });
 
   } catch (err) {
     console.error('[Audit] Error:', err.message);
